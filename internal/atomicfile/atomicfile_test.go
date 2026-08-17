@@ -3,6 +3,7 @@ package atomicfile
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -26,7 +27,9 @@ func TestWriteReplacesFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o644 {
+	// Windows does not implement Unix permission bits. The write and replace
+	// behavior above is still exercised there.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
 		t.Fatalf("mode = %o", info.Mode().Perm())
 	}
 }
