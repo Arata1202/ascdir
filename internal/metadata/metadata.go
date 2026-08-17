@@ -77,11 +77,25 @@ func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) 
 			operations = append(operations, writeOperation{locale: locale, field: field, path: fullPath, data: []byte(value)})
 		}
 	}
-	// Resolve and validate every destination before replacing any files. This
-	// prevents configuration and path errors from leaving a partially updated
-	// metadata tree. Each individual replacement remains atomic.
+	// Resolve, validate, and fully stage every destination before replacing any
+	// files. This prevents configuration, permission, and write errors from
+	// modifying the existing metadata tree. Each replacement remains atomic.
+	pending := make([]*atomicfile.Pending, 0, len(operations))
+	defer func() {
+		for _, file := range pending {
+			file.Cleanup()
+		}
+	}()
 	for _, operation := range operations {
-		if err := atomicfile.Write(operation.path, operation.data, 0o644); err != nil {
+		file, err := atomicfile.Prepare(operation.path, operation.data, 0o644)
+		if err != nil {
+			return fmt.Errorf("write %s.%s: %w", operation.locale, operation.field, err)
+		}
+		pending = append(pending, file)
+	}
+	for index, file := range pending {
+		if err := file.Commit(); err != nil {
+			operation := operations[index]
 			return fmt.Errorf("write %s.%s: %w", operation.locale, operation.field, err)
 		}
 	}
