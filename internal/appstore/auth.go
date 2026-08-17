@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -22,8 +23,8 @@ type Credentials struct {
 }
 
 func CredentialsFromEnv() (Credentials, error) {
-	issuerID := os.Getenv("ASC_ISSUER_ID")
-	keyID := os.Getenv("ASC_KEY_ID")
+	issuerID := strings.TrimSpace(os.Getenv("ASC_ISSUER_ID"))
+	keyID := strings.TrimSpace(os.Getenv("ASC_KEY_ID"))
 	keyPath := os.Getenv("ASC_PRIVATE_KEY_PATH")
 	if issuerID == "" || keyID == "" || keyPath == "" {
 		return Credentials{}, errors.New("ASC_ISSUER_ID, ASC_KEY_ID, and ASC_PRIVATE_KEY_PATH are required")
@@ -35,6 +36,9 @@ func CredentialsFromEnv() (Credentials, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
 		return Credentials{}, errors.New("private key is not PEM encoded")
+	}
+	if block.Type != "PRIVATE KEY" {
+		return Credentials{}, fmt.Errorf("private key PEM block must be PRIVATE KEY, got %q", block.Type)
 	}
 	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,6 +22,14 @@ type Client struct {
 	baseURL     string
 	httpClient  *http.Client
 	now         func() time.Time
+	maxRetries  int
+	sleep       func(context.Context, time.Duration) error
+}
+
+type Option func(*Client)
+
+func WithTimeout(timeout time.Duration) Option {
+	return func(client *Client) { client.httpClient.Timeout = timeout }
 }
 
 type Metadata struct {
@@ -43,7 +52,14 @@ type resource struct {
 }
 
 type listResponse struct {
-	Data []resource `json:"data"`
+	Data  []resource `json:"data"`
+	Links struct {
+		Next string `json:"next"`
+	} `json:"links"`
+}
+
+type singleResponse struct {
+	Data resource `json:"data"`
 }
 
 type errorResponse struct {
@@ -55,16 +71,27 @@ type errorResponse struct {
 	} `json:"errors"`
 }
 
-func NewClient(credentials Credentials, baseURL string) *Client {
+func NewClient(credentials Credentials, baseURL string, options ...Option) *Client {
 	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
-	return &Client{
+	client := &Client{
 		credentials: credentials,
 		baseURL:     strings.TrimRight(baseURL, "/"),
 		httpClient:  &http.Client{Timeout: 30 * time.Second},
 		now:         time.Now,
+		maxRetries:  3,
+		sleep:       sleepContext,
 	}
+	for _, option := range options {
+		option(client)
+	}
+	return client
+}
+
+func (c *Client) CheckAuth(ctx context.Context) error {
+	var response listResponse
+	return c.doJSON(ctx, http.MethodGet, "/v1/apps?limit=1", nil, &response)
 }
 
 func (m Metadata) Locales() []string {
@@ -76,18 +103,12 @@ func (m Metadata) Locales() []string {
 	return locales
 }
 
-func (c *Client) FetchMetadata(ctx context.Context, bundleID, platform, version string) (Metadata, error) {
-	apps, err := c.list(ctx, "/v1/apps?filter%5BbundleId%5D="+url.QueryEscape(bundleID)+"&limit=2")
+func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, version string) (Metadata, error) {
+	app, err := c.resolveApp(ctx, appID, bundleID)
 	if err != nil {
 		return Metadata{}, err
 	}
-	if len(apps) == 0 {
-		return Metadata{}, fmt.Errorf("app with bundle ID %q was not found", bundleID)
-	}
-	if len(apps) > 1 {
-		return Metadata{}, fmt.Errorf("multiple apps matched bundle ID %q", bundleID)
-	}
-	result := Metadata{AppID: apps[0].ID, Localizations: map[string]Localization{}}
+	result := Metadata{AppID: app.ID, Localizations: map[string]Localization{}}
 
 	infos, err := c.list(ctx, fmt.Sprintf("/v1/apps/%s/appInfos?limit=10", result.AppID))
 	if err != nil {
@@ -142,15 +163,23 @@ func (c *Client) FetchMetadata(ctx context.Context, bundleID, platform, version 
 }
 
 var infoFields = map[string]string{
-	"name": "name", "subtitle": "subtitle", "privacy_policy_url": "privacyPolicyUrl",
+	"name":                "name",
+	"subtitle":            "subtitle",
+	"privacy_policy_url":  "privacyPolicyUrl",
+	"privacy_choices_url": "privacyChoicesUrl",
+	"privacy_policy_text": "privacyPolicyText",
 }
 
 var versionFields = map[string]string{
-	"description": "description", "keywords": "keywords", "promotional_text": "promotionalText",
-	"whats_new": "whatsNew", "support_url": "supportUrl", "marketing_url": "marketingUrl",
+	"description":      "description",
+	"keywords":         "keywords",
+	"promotional_text": "promotionalText",
+	"whats_new":        "whatsNew",
+	"support_url":      "supportUrl",
+	"marketing_url":    "marketingUrl",
 }
 
-func (c *Client) ApplyMetadata(ctx context.Context, remote, desired Metadata, changes []Change) error {
+func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, changes []Change) error {
 	grouped := map[string]map[string]string{}
 	for _, change := range changes {
 		key := change.Locale + "\x00" + fieldGroup(change.Field)
@@ -194,6 +223,30 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote, desired Metadata, ch
 	return nil
 }
 
+func (c *Client) resolveApp(ctx context.Context, appID, bundleID string) (resource, error) {
+	if appID != "" {
+		var response singleResponse
+		if err := c.doJSON(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(appID)+"?fields%5Bapps%5D=bundleId", nil, &response); err != nil {
+			return resource{}, err
+		}
+		if actual := stringAttribute(response.Data, "bundleId"); actual != "" && actual != bundleID {
+			return resource{}, fmt.Errorf("configured app ID belongs to bundle ID %q, not %q", actual, bundleID)
+		}
+		return response.Data, nil
+	}
+	apps, err := c.list(ctx, "/v1/apps?filter%5BbundleId%5D="+url.QueryEscape(bundleID)+"&fields%5Bapps%5D=bundleId&limit=2")
+	if err != nil {
+		return resource{}, err
+	}
+	if len(apps) == 0 {
+		return resource{}, fmt.Errorf("app with bundle ID %q was not found", bundleID)
+	}
+	if len(apps) > 1 {
+		return resource{}, fmt.Errorf("multiple apps matched bundle ID %q", bundleID)
+	}
+	return apps[0], nil
+}
+
 type Change struct {
 	Locale string
 	Field  string
@@ -229,58 +282,147 @@ func singular(parentType string) string {
 }
 
 func (c *Client) list(ctx context.Context, path string) ([]resource, error) {
-	var response listResponse
-	if err := c.doJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
-		return nil, err
+	var resources []resource
+	next := path
+	seen := map[string]bool{}
+	for page := 0; next != ""; page++ {
+		if page >= 100 {
+			return nil, errors.New("pagination exceeded 100 pages")
+		}
+		if seen[next] {
+			return nil, errors.New("pagination returned a repeated next link")
+		}
+		seen[next] = true
+		var response listResponse
+		if err := c.doJSON(ctx, http.MethodGet, next, nil, &response); err != nil {
+			return nil, err
+		}
+		resources = append(resources, response.Data...)
+		next = response.Links.Next
 	}
-	return response.Data, nil
+	return resources, nil
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, requestBody, responseBody any) error {
-	var body io.Reader
+	var requestData []byte
 	if requestBody != nil {
 		data, err := json.Marshal(requestBody)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(data)
+		requestData = data
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	requestURL, err := c.resolveURL(path)
 	if err != nil {
 		return err
 	}
-	token, err := c.credentials.Token(c.now())
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
-	if requestBody != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("App Store Connect request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	for attempt := 0; ; attempt++ {
+		var body io.Reader
+		if requestData != nil {
+			body = bytes.NewReader(requestData)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, requestURL, body)
+		if err != nil {
+			return err
+		}
+		token, err := c.credentials.Token(c.now())
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/json")
+		if requestData != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			if attempt < c.maxRetries && methodRetryable(method) {
+				if sleepErr := c.sleep(ctx, retryDelay(attempt, "", c.now())); sleepErr != nil {
+					return sleepErr
+				}
+				continue
+			}
+			return fmt.Errorf("request to App Store Connect failed: %w", err)
+		}
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+		resp.Body.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			if responseBody != nil && len(data) > 0 {
+				if err := json.Unmarshal(data, responseBody); err != nil {
+					return fmt.Errorf("decode response from App Store Connect: %w", err)
+				}
+			}
+			return nil
+		}
+		if attempt < c.maxRetries && statusRetryable(method, resp.StatusCode) {
+			if err := c.sleep(ctx, retryDelay(attempt, resp.Header.Get("Retry-After"), c.now())); err != nil {
+				return err
+			}
+			continue
+		}
 		var apiError errorResponse
 		if json.Unmarshal(data, &apiError) == nil && len(apiError.Errors) > 0 {
 			item := apiError.Errors[0]
-			return fmt.Errorf("App Store Connect API %s (%s): %s", item.Title, item.Code, item.Detail)
+			return fmt.Errorf("the App Store Connect API reported %s (%s): %s", item.Title, item.Code, item.Detail)
 		}
-		return fmt.Errorf("App Store Connect API returned %s", resp.Status)
+		return fmt.Errorf("the App Store Connect API returned %s", resp.Status)
 	}
-	if responseBody != nil && len(data) > 0 {
-		if err := json.Unmarshal(data, responseBody); err != nil {
-			return fmt.Errorf("decode App Store Connect response: %w", err)
-		}
+}
+
+func (c *Client) resolveURL(path string) (string, error) {
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		return "", err
 	}
-	return nil
+	reference, err := url.Parse(path)
+	if err != nil {
+		return "", err
+	}
+	resolved := base.ResolveReference(reference)
+	if resolved.Scheme != base.Scheme || resolved.Host != base.Host {
+		return "", errors.New("pagination link from App Store Connect changed origin")
+	}
+	return resolved.String(), nil
+}
+
+func methodRetryable(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodPatch
+}
+
+func statusRetryable(method string, status int) bool {
+	if status == http.StatusTooManyRequests {
+		return true
+	}
+	if !methodRetryable(method) {
+		return false
+	}
+	return status == http.StatusInternalServerError || status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
+}
+
+func retryDelay(attempt int, retryAfter string, now time.Time) time.Duration {
+	const maximum = 30 * time.Second
+	if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds >= 0 {
+		return min(time.Duration(seconds)*time.Second, maximum)
+	}
+	if parsed, err := http.ParseTime(retryAfter); err == nil {
+		return min(max(parsed.Sub(now), 0), maximum)
+	}
+	delay := time.Second << attempt
+	return min(delay, maximum)
+}
+
+func sleepContext(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func stringAttribute(item resource, key string) string {

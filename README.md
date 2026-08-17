@@ -7,13 +7,16 @@
 - Store localized metadata in plain text and Markdown files
 - Pull existing metadata from App Store Connect
 - Preview exact changes before writing with `push --dry-run`
+- Protect non-empty remote fields from accidental clearing
 - Validate common App Store character limits and URLs locally
 - Manage multiple locales from one `ascdir.yaml`
 - Authenticate with App Store Connect API keys
+- Follow paginated responses and retry rate limits and transient failures
+- Run without telemetry or credential uploads
 
 ## Installation
 
-Build from source with Go 1.26 or later:
+Build from source with Go 1.26.6 or later:
 
 ```sh
 go install github.com/Arata1202/ascdir/cmd/ascdir@latest
@@ -30,6 +33,14 @@ export ASC_PRIVATE_KEY_PATH="$HOME/.private_keys/AuthKey_ABC123DEFG.p8"
 ```
 
 Never commit the private key. `ascdir` ignores `*.p8` and `.env` by default, but credentials should still be stored outside the repository or in a CI secret store.
+
+Verify the credentials and API access before initializing a project:
+
+```sh
+ascdir auth check
+```
+
+The HTTP timeout defaults to 30 seconds. Set `ASCDIR_TIMEOUT` to a positive Go duration such as `45s` when needed.
 
 ## Quick start
 
@@ -60,6 +71,7 @@ ascdir push
 To replace local files with the current App Store Connect values:
 
 ```sh
+ascdir pull --dry-run
 ascdir pull
 ```
 
@@ -83,13 +95,37 @@ localizations:
     support_url: metadata/en-US/support_url.txt
     marketing_url: metadata/en-US/marketing_url.txt
     privacy_policy_url: metadata/en-US/privacy_policy_url.txt
+    privacy_choices_url: metadata/en-US/privacy_choices_url.txt
+    privacy_policy_text: metadata/en-US/privacy_policy.md
 ```
 
 Paths are relative to the directory containing `ascdir.yaml`. Set a field path to an empty string or remove it to leave that field unmanaged.
 
+Unknown configuration keys are rejected so misspelled fields cannot be silently ignored. Metadata files are replaced atomically to avoid partially written files.
+
 Supported platforms are `IOS`, `MAC_OS`, `TV_OS`, and `VISION_OS`.
 
+## Managed metadata
+
+App-level localization fields:
+
+- Name and subtitle
+- Privacy policy URL and text
+- Privacy choices URL
+
+Version-level localization fields:
+
+- Description and keywords
+- Promotional text and what's new text
+- Support URL and marketing URL
+
+When a configured locale does not exist remotely, `push` creates both the app-level and version-level localization resources in the order required by App Store Connect.
+
 ## Commands
+
+### `ascdir auth check`
+
+Validates the configured private key, creates a short-lived JWT locally, and performs a read-only API request.
 
 ### `ascdir init`
 
@@ -97,11 +133,20 @@ Finds an existing app and version, generates the configuration, and pulls its lo
 
 ### `ascdir pull`
 
-Downloads configured fields. Local edits are overwritten, so commit or review them first.
+Downloads configured fields. Local edits are overwritten, so commit or review them first. Use `pull --dry-run` to preview the local differences without writing files.
 
 ### `ascdir push`
 
-Compares local files with App Store Connect and updates only changed resources. Use `--dry-run` to inspect changes without writing.
+Validates and compares local files with App Store Connect, then updates only changed resources. Use `--dry-run` to inspect changes without writing.
+
+Clearing a non-empty remote field requires the explicit `--allow-empty` flag:
+
+```sh
+ascdir push --dry-run
+ascdir push --allow-empty
+```
+
+Apple only permits most version metadata to change while the version is in an editable state. API errors are returned without hiding Apple's error code or detail.
 
 ### `ascdir check`
 
@@ -114,9 +159,13 @@ Checks the configuration, required files, common character limits, and HTTP(S) U
 ## Security
 
 - Authentication uses short-lived ES256 JSON Web Tokens generated locally.
-- The `.p8` private key is read from the path in `ASC_PRIVATE_KEY_PATH` and is never sent anywhere except through the JWT signature required by Apple.
+- The `.p8` private key is read from the path in `ASC_PRIVATE_KEY_PATH` and never leaves the machine. Apple receives only the signed JWT.
 - API errors are reported without printing credentials or JWTs.
 - `push --dry-run` never sends mutation requests.
+- Pagination links are restricted to the configured App Store Connect API origin, preventing bearer tokens from being forwarded to another host.
+- Metadata paths are confined to the configuration directory after resolving symbolic links.
+- Retried mutations are limited to idempotent updates and requests rejected by rate limiting.
+- ascdir collects no telemetry.
 
 ## Development
 
@@ -125,6 +174,10 @@ make fmt
 make check
 make build
 ```
+
+Tests use generated keys and local HTTP servers. They never require real App Store Connect credentials or contact the production API.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## License
 

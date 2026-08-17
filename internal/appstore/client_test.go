@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestFetchAndApplyMetadata(t *testing.T) {
@@ -45,7 +47,7 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	defer server.Close()
 
 	client := testClient(t, server.URL)
-	remote, err := client.FetchMetadata(context.Background(), "com.example.app", "IOS", "1.0.0")
+	remote, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,12 +57,11 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	if got := remote.Localizations["en-US"].Values["description"]; got != "Old description" {
 		t.Fatalf("description = %q", got)
 	}
-	desired := Metadata{Localizations: map[string]Localization{"en-US": {Values: map[string]string{"name": "New Name", "description": "New description"}}}}
 	changes := []Change{
 		{Locale: "en-US", Field: "name", Before: "Old Name", After: "New Name"},
 		{Locale: "en-US", Field: "description", Before: "Old description", After: "New description"},
 	}
-	if err := client.ApplyMetadata(context.Background(), remote, desired, changes); err != nil {
+	if err := client.ApplyMetadata(context.Background(), remote, changes); err != nil {
 		t.Fatal(err)
 	}
 	if len(mutations) != 2 {
@@ -77,9 +78,129 @@ func TestAPIErrorDoesNotExposeResponseBody(t *testing.T) {
 	}))
 	defer server.Close()
 	client := testClient(t, server.URL)
-	_, err := client.FetchMetadata(context.Background(), "com.example.app", "IOS", "1.0.0")
+	_, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0")
 	if err == nil || !strings.Contains(err.Error(), "FORBIDDEN") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestListFollowsSameOriginPagination(t *testing.T) {
+	t.Parallel()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("page") == "2" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{resourceJSON("app-2", "apps", nil)}, "links": map[string]any{}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data":  []any{resourceJSON("app-1", "apps", nil)},
+			"links": map[string]any{"next": server.URL + "/v1/apps?page=2"},
+		})
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	resources, err := client.list(context.Background(), "/v1/apps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 2 {
+		t.Fatalf("got %d resources, want 2", len(resources))
+	}
+}
+
+func TestListRejectsCrossOriginPagination(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{}, "links": map[string]any{"next": "https://example.com/steal-token"}})
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	_, err := client.list(context.Background(), "/v1/apps")
+	if err == nil || !strings.Contains(err.Error(), "changed origin") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRetriesRateLimit(t *testing.T) {
+	t.Parallel()
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempt := attempts.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if attempt == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		writeData(t, w, []any{})
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	client.sleep = func(context.Context, time.Duration) error { return nil }
+	if _, err := client.list(context.Background(), "/v1/apps"); err != nil {
+		t.Fatal(err)
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts.Load())
+	}
+}
+
+func TestResolveAppUsesConfiguredIDAndVerifiesBundleID(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/apps/app-1" {
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("app-1", "apps", map[string]any{"bundleId": "com.other.app"})})
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	_, err := client.resolveApp(context.Background(), "app-1", "com.example.app")
+	if err == nil || !strings.Contains(err.Error(), "com.other.app") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyMetadataCreatesMatchingLocalizationsInSafeOrder(t *testing.T) {
+	t.Parallel()
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		var body struct {
+			Data struct {
+				Attributes map[string]string `json:"attributes"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Data.Attributes["locale"] != "fr-FR" {
+			t.Errorf("locale = %q", body.Data.Attributes["locale"])
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	remote := Metadata{AppInfoID: "info-1", VersionID: "version-1", Localizations: map[string]Localization{}}
+	changes := []Change{
+		{Locale: "fr-FR", Field: "name", After: "Exemple"},
+		{Locale: "fr-FR", Field: "description", After: "Description"},
+	}
+	if err := client.ApplyMetadata(context.Background(), remote, changes); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/v1/appInfoLocalizations", "/v1/appStoreVersionLocalizations"}
+	if len(paths) != len(want) {
+		t.Fatalf("paths = %#v", paths)
+	}
+	for index := range want {
+		if paths[index] != want[index] {
+			t.Fatalf("paths = %#v, want %#v", paths, want)
+		}
 	}
 }
 

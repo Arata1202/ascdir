@@ -5,6 +5,14 @@ builds:
     binary: ascdir
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X main.version={{.Version}}
+        -X main.commit={{.Commit}}
+        -X main.date={{.Date}}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
@@ -16,6 +24,10 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+release:
+  draft: false
+  prerelease: auto
 
 changelog:
   sort: asc

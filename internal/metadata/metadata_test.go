@@ -2,7 +2,9 @@ package metadata
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -53,5 +55,75 @@ func TestValidate(t *testing.T) {
 	problems := Validate(values)
 	if len(problems) != 2 {
 		t.Fatalf("problems = %#v", problems)
+	}
+}
+
+func TestClearingChanges(t *testing.T) {
+	t.Parallel()
+	changes := []appstore.Change{
+		{Locale: "en-US", Field: "subtitle", Before: "Old", After: ""},
+		{Locale: "en-US", Field: "name", Before: "Old", After: "New"},
+		{Locale: "ja", Field: "subtitle", Before: "", After: ""},
+	}
+	clears := ClearingChanges(changes)
+	if len(clears) != 1 || clears[0].Field != "subtitle" {
+		t.Fatalf("unexpected clearing changes: %#v", clears)
+	}
+}
+
+func TestReadLocalRejectsSymlinkOutsideProject(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation commonly requires elevated privileges on Windows")
+	}
+	t.Parallel()
+	project := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metadataDirectory := filepath.Join(project, "metadata", "en-US")
+	if err := os.MkdirAll(metadataDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(metadataDirectory, "name.txt")); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	files := cfg.Localizations["en-US"]
+	files.Subtitle = ""
+	files.Description = ""
+	files.Keywords = ""
+	files.PromotionalText = ""
+	files.WhatsNew = ""
+	files.SupportURL = ""
+	files.MarketingURL = ""
+	files.PrivacyPolicyURL = ""
+	files.PrivacyChoicesURL = ""
+	files.PrivacyPolicyText = ""
+	cfg.Localizations["en-US"] = files
+	_, err := ReadLocal(cfg, filepath.Join(project, "ascdir.yaml"))
+	if err == nil || !strings.Contains(err.Error(), "outside the configuration directory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWriteLocalRejectsSymlinkedDirectoryOutsideProject(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation commonly requires elevated privileges on Windows")
+	}
+	t.Parallel()
+	project := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(project, "metadata")); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	remote := appstore.Metadata{Localizations: map[string]appstore.Localization{"en-US": {Values: map[string]string{"name": "Example"}}}}
+	err := WriteLocal(cfg, filepath.Join(project, "ascdir.yaml"), remote)
+	if err == nil || !strings.Contains(err.Error(), "outside the configuration directory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "en-US")); !os.IsNotExist(err) {
+		t.Fatalf("write created a directory outside the project: %v", err)
 	}
 }

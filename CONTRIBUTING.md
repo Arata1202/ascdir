@@ -4,7 +4,7 @@ Bug reports, focused feature requests, documentation improvements, and pull requ
 
 ## Development setup
 
-ascdir requires Go 1.26 or later.
+ascdir requires Go 1.26.6 or later.
 
 ```sh
 git clone https://github.com/Arata1202/ascdir.git
