@@ -89,7 +89,21 @@ jobs:
         with:
           go-version: "1.26.6"
           cache: true
-      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      - name: Install Syft
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="1.51.0"
+          archive="syft_${version}_linux_amd64.tar.gz"
+          base_url="https://github.com/anchore/syft/releases/download/v${version}"
+          curl -fsSL "${base_url}/${archive}" -o "${RUNNER_TEMP}/${archive}"
+          curl -fsSL "${base_url}/syft_${version}_checksums.txt" -o "${RUNNER_TEMP}/syft-checksums.txt"
+          expected="$(awk -v archive="$archive" '$2 == archive { print $1 }' "${RUNNER_TEMP}/syft-checksums.txt")"
+          actual="$(sha256sum "${RUNNER_TEMP}/${archive}" | awk '{ print $1 }')"
+          test -n "$expected" && test "$actual" = "$expected"
+          mkdir -p "${RUNNER_TEMP}/syft"
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/syft" syft
+          echo "${RUNNER_TEMP}/syft" >> "$GITHUB_PATH"
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
