@@ -30,6 +30,8 @@ jobs:
         with:
           go-version-input: "1.26.6"
           go-package: ./...
+          repo-checkout: false
+          cache: false
 
   test:
     strategy:
