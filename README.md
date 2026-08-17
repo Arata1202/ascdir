@@ -43,7 +43,14 @@ go install github.com/Arata1202/ascdir/cmd/ascdir@latest
 
 ## Authentication
 
-Create an App Store Connect API key, download its `.p8` private key once, and set:
+Create an App Store Connect API key, download its `.p8` private key once, and run:
+
+```sh
+ascdir auth login
+ascdir auth check
+```
+
+The login command stores the issuer ID, key ID, and absolute path to the private key in your user configuration directory. The private key itself is not copied. For CI or temporary overrides, set:
 
 ```sh
 export ASC_ISSUER_ID="00000000-0000-0000-0000-000000000000"
@@ -52,12 +59,6 @@ export ASC_PRIVATE_KEY_PATH="$HOME/.private_keys/AuthKey_ABC123DEFG.p8"
 ```
 
 Never commit the private key. `ascdir` ignores `*.p8` and `.env` by default, but credentials should still be stored outside the repository or in a CI secret store.
-
-Verify the credentials and API access before initializing a project:
-
-```sh
-ascdir auth check
-```
 
 The HTTP timeout defaults to 30 seconds. Set `ASCDIR_TIMEOUT` to a positive Go duration such as `45s` when needed.
 

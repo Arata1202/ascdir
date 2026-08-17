@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -8,12 +9,14 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Arata1202/ascdir/internal/appstore"
+	"github.com/Arata1202/ascdir/internal/authconfig"
 	"github.com/Arata1202/ascdir/internal/config"
 	"github.com/Arata1202/ascdir/internal/metadata"
 )
@@ -31,6 +34,7 @@ type storeClient interface {
 }
 
 type commandEnvironment struct {
+	stdin     io.Reader
 	stdout    io.Writer
 	stderr    io.Writer
 	newClient func() (storeClient, error)
@@ -38,6 +42,7 @@ type commandEnvironment struct {
 
 func defaultCommandEnvironment() commandEnvironment {
 	return commandEnvironment{
+		stdin:  os.Stdin,
 		stdout: os.Stdout,
 		stderr: os.Stderr,
 		newClient: func() (storeClient, error) {
@@ -116,6 +121,7 @@ func usage(writer io.Writer) {
 
 Usage:
   ascdir init  --bundle-id ID --version VERSION [--platform IOS] [--locale en-US]
+  ascdir auth login
   ascdir auth check
   ascdir pull  [--config ascdir.yaml] [--dry-run]
   ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty]
@@ -131,8 +137,11 @@ Authentication:
 }
 
 func runAuth(ctx context.Context, args []string, environment commandEnvironment) error {
+	if len(args) == 1 && args[0] == "login" {
+		return runAuthLogin(environment)
+	}
 	if len(args) != 1 || args[0] != "check" {
-		return errors.New("usage: ascdir auth check")
+		return errors.New("usage: ascdir auth <login|check>")
 	}
 	client, err := environment.newClient()
 	if err != nil {
@@ -142,6 +151,50 @@ func runAuth(ctx context.Context, args []string, environment commandEnvironment)
 		return err
 	}
 	fmt.Fprintln(environment.stdout, "Authentication succeeded.")
+	return nil
+}
+
+func runAuthLogin(environment commandEnvironment) error {
+	reader := bufio.NewReader(environment.stdin)
+	read := func(label string) (string, error) {
+		fmt.Fprint(environment.stdout, label+": ")
+		value, err := reader.ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		return strings.TrimSpace(value), nil
+	}
+	issuerID, err := read("Issuer ID")
+	if err != nil {
+		return err
+	}
+	keyID, err := read("Key ID")
+	if err != nil {
+		return err
+	}
+	keyPath, err := read("Private key path")
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(keyPath, "~/") {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return fmt.Errorf("expand private key path: %w", homeErr)
+		}
+		keyPath = filepath.Join(home, strings.TrimPrefix(keyPath, "~/"))
+	}
+	keyPath, err = filepath.Abs(keyPath)
+	if err != nil {
+		return fmt.Errorf("resolve private key path: %w", err)
+	}
+	if _, err := appstore.CredentialsFromValues(issuerID, keyID, keyPath); err != nil {
+		return err
+	}
+	path, err := authconfig.Save(authconfig.Config{IssuerID: issuerID, KeyID: keyID, PrivateKeyPath: keyPath})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(environment.stdout, "Credentials saved to %s.\n", path)
 	return nil
 }
 
@@ -349,7 +402,18 @@ func requireNoArgs(fs *flag.FlagSet) error {
 }
 
 func newClient() (*appstore.Client, error) {
-	credentials, err := appstore.CredentialsFromEnv()
+	issuerID, keyID, keyPath := os.Getenv("ASC_ISSUER_ID"), os.Getenv("ASC_KEY_ID"), os.Getenv("ASC_PRIVATE_KEY_PATH")
+	var credentials appstore.Credentials
+	var err error
+	if issuerID != "" || keyID != "" || keyPath != "" {
+		credentials, err = appstore.CredentialsFromEnv()
+	} else {
+		stored, loadErr := authconfig.Load()
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		credentials, err = appstore.CredentialsFromValues(stored.IssuerID, stored.KeyID, stored.PrivateKeyPath)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/Arata1202/ascdir/internal/appstore"
+	"github.com/Arata1202/ascdir/internal/authconfig"
 	"github.com/Arata1202/ascdir/internal/config"
 	"github.com/Arata1202/ascdir/internal/metadata"
 )
@@ -36,6 +42,7 @@ func (m mockStoreClient) ApplyMetadata(ctx context.Context, remote appstore.Meta
 func testEnvironment(client storeClient) (commandEnvironment, *bytes.Buffer, *bytes.Buffer) {
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 	return commandEnvironment{
+		stdin:  strings.NewReader(""),
 		stdout: stdout,
 		stderr: stderr,
 		newClient: func() (storeClient, error) {
@@ -113,6 +120,42 @@ func TestRunDispatchAndAuth(t *testing.T) {
 	}
 	if err := runWithEnvironment(context.Background(), []string{"auth"}, environment); err == nil {
 		t.Fatal("invalid auth command succeeded")
+	}
+}
+
+func TestRunAuthLogin(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(t.TempDir(), "AuthKey_TEST.p8")
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configHome := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("AppData", configHome)
+	} else {
+		t.Setenv("XDG_CONFIG_HOME", configHome)
+	}
+	environment, stdout, _ := testEnvironment(nil)
+	environment.stdin = strings.NewReader("issuer\nkey-id\n" + keyPath + "\n")
+	if err := runWithEnvironment(context.Background(), []string{"auth", "login"}, environment); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Credentials saved") {
+		t.Fatalf("unexpected output: %q", stdout.String())
+	}
+	stored, err := authconfig.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.IssuerID != "issuer" || stored.KeyID != "key-id" || stored.PrivateKeyPath != keyPath {
+		t.Fatalf("stored config = %#v", stored)
 	}
 }
 

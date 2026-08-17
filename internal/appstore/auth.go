@@ -29,6 +29,16 @@ func CredentialsFromEnv() (Credentials, error) {
 	if issuerID == "" || keyID == "" || keyPath == "" {
 		return Credentials{}, errors.New("ASC_ISSUER_ID, ASC_KEY_ID, and ASC_PRIVATE_KEY_PATH are required")
 	}
+	return CredentialsFromValues(issuerID, keyID, keyPath)
+}
+
+func CredentialsFromValues(issuerID, keyID, keyPath string) (Credentials, error) {
+	issuerID = strings.TrimSpace(issuerID)
+	keyID = strings.TrimSpace(keyID)
+	keyPath = strings.TrimSpace(keyPath)
+	if issuerID == "" || keyID == "" || keyPath == "" {
+		return Credentials{}, errors.New("issuer ID, key ID, and private key path are required")
+	}
 	data, err := os.ReadFile(keyPath)
 	if err != nil {
 		return Credentials{}, fmt.Errorf("read private key: %w", err)
