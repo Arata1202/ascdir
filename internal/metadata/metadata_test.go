@@ -71,6 +71,29 @@ func TestClearingChanges(t *testing.T) {
 	}
 }
 
+func TestSelectKeepsOnlyConfiguredFields(t *testing.T) {
+	t.Parallel()
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	files := cfg.Localizations["en-US"]
+	files.Subtitle = ""
+	cfg.Localizations["en-US"] = files
+	source := appstore.Metadata{
+		AppID: "app-1", AppInfoID: "info-1", VersionID: "version-1",
+		Localizations: map[string]appstore.Localization{"en-US": {Values: map[string]string{"name": "Example", "subtitle": "Ignored"}}},
+	}
+	selected := Select(cfg, source)
+	if selected.AppInfoID != "info-1" || selected.VersionID != "version-1" {
+		t.Fatalf("IDs were not preserved: %#v", selected)
+	}
+	values := selected.Localizations["en-US"].Values
+	if values["name"] != "Example" {
+		t.Fatalf("name = %q", values["name"])
+	}
+	if _, ok := values["subtitle"]; ok {
+		t.Fatalf("unmanaged subtitle was selected: %#v", values)
+	}
+}
+
 func TestReadLocalRejectsSymlinkOutsideProject(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation commonly requires elevated privileges on Windows")
@@ -125,5 +148,46 @@ func TestWriteLocalRejectsSymlinkedDirectoryOutsideProject(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outside, "en-US")); !os.IsNotExist(err) {
 		t.Fatalf("write created a directory outside the project: %v", err)
+	}
+}
+
+func TestWriteLocalValidatesAllPathsBeforeReplacingFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation commonly requires elevated privileges on Windows")
+	}
+	t.Parallel()
+	project := t.TempDir()
+	metadataDirectory := filepath.Join(project, "metadata")
+	if err := os.MkdirAll(filepath.Join(metadataDirectory, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	descriptionPath := filepath.Join(metadataDirectory, "a", "description.md")
+	if err := os.WriteFile(descriptionPath, []byte("original\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(metadataDirectory, "z")); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	files := cfg.Localizations["en-US"]
+	files.Description = "metadata/a/description.md"
+	files.Name = "metadata/z/name.txt"
+	files.Subtitle, files.Keywords, files.PromotionalText, files.WhatsNew = "", "", "", ""
+	files.SupportURL, files.MarketingURL = "", ""
+	files.PrivacyPolicyURL, files.PrivacyChoicesURL, files.PrivacyPolicyText = "", "", ""
+	cfg.Localizations["en-US"] = files
+	remote := appstore.Metadata{Localizations: map[string]appstore.Localization{
+		"en-US": {Values: map[string]string{"description": "replacement", "name": "replacement"}},
+	}}
+	if err := WriteLocal(cfg, filepath.Join(project, "ascdir.yaml"), remote); err == nil {
+		t.Fatal("unsafe write succeeded")
+	}
+	data, err := os.ReadFile(descriptionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "original\n" {
+		t.Fatalf("description changed before path validation completed: %q", data)
 	}
 }

@@ -22,7 +22,9 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		files := cfg.Localizations[locale]
 		values := map[string]string{}
-		for field, path := range files.Paths() {
+		paths := files.Paths()
+		for _, field := range sortedFields(paths) {
+			path := paths[field]
 			if path == "" {
 				continue
 			}
@@ -43,10 +45,20 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 
 func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) error {
 	base := filepath.Dir(filepath.Clean(configPath))
+	type writeOperation struct {
+		locale string
+		field  string
+		path   string
+		data   []byte
+	}
+	var operations []writeOperation
+	resolvedPaths := map[string]string{}
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		files := cfg.Localizations[locale]
 		remoteLocale := remote.Localizations[locale]
-		for field, path := range files.Paths() {
+		paths := files.Paths()
+		for _, field := range sortedFields(paths) {
+			path := paths[field]
 			if path == "" {
 				continue
 			}
@@ -58,9 +70,19 @@ func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) 
 			if value != "" {
 				value += "\n"
 			}
-			if err := atomicfile.Write(fullPath, []byte(value), 0o644); err != nil {
-				return fmt.Errorf("write %s.%s: %w", locale, field, err)
+			if previous, ok := resolvedPaths[fullPath]; ok {
+				return fmt.Errorf("%s.%s resolves to the same metadata file as %s", locale, field, previous)
 			}
+			resolvedPaths[fullPath] = locale + "." + field
+			operations = append(operations, writeOperation{locale: locale, field: field, path: fullPath, data: []byte(value)})
+		}
+	}
+	// Resolve and validate every destination before replacing any files. This
+	// prevents configuration and path errors from leaving a partially updated
+	// metadata tree. Each individual replacement remains atomic.
+	for _, operation := range operations {
+		if err := atomicfile.Write(operation.path, operation.data, 0o644); err != nil {
+			return fmt.Errorf("write %s.%s: %w", operation.locale, operation.field, err)
 		}
 	}
 	return nil
@@ -199,6 +221,15 @@ func summarize(value string) string {
 	}
 	runes := []rune(value)
 	return string(runes[:limit]) + "…"
+}
+
+func sortedFields(paths map[string]string) []string {
+	fields := make([]string, 0, len(paths))
+	for field := range paths {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	return fields
 }
 
 func Validate(values appstore.Metadata) []string {

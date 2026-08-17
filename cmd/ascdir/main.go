@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -23,6 +24,28 @@ var (
 	date    = "unknown"
 )
 
+type storeClient interface {
+	CheckAuth(context.Context) error
+	FetchMetadata(context.Context, string, string, string, string) (appstore.Metadata, error)
+	ApplyMetadata(context.Context, appstore.Metadata, []string, []appstore.Change) error
+}
+
+type commandEnvironment struct {
+	stdout    io.Writer
+	stderr    io.Writer
+	newClient func() (storeClient, error)
+}
+
+func defaultCommandEnvironment() commandEnvironment {
+	return commandEnvironment{
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+		newClient: func() (storeClient, error) {
+			return newClient()
+		},
+	}
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -36,28 +59,32 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	return runWithEnvironment(ctx, args, defaultCommandEnvironment())
+}
+
+func runWithEnvironment(ctx context.Context, args []string, environment commandEnvironment) error {
 	if len(args) == 0 {
-		usage()
+		usage(environment.stdout)
 		return nil
 	}
 
 	switch args[0] {
 	case "help", "-h", "--help":
-		usage()
+		usage(environment.stdout)
 		return nil
 	case "version", "--version":
-		fmt.Println(versionString())
+		fmt.Fprintln(environment.stdout, versionString())
 		return nil
 	case "auth":
-		return runAuth(ctx, args[1:])
+		return runAuth(ctx, args[1:], environment)
 	case "init":
-		return runInit(ctx, args[1:])
+		return runInit(ctx, args[1:], environment)
 	case "pull":
-		return runPull(ctx, args[1:])
+		return runPull(ctx, args[1:], environment)
 	case "push":
-		return runPush(ctx, args[1:])
+		return runPush(ctx, args[1:], environment)
 	case "check":
-		return runCheck(args[1:])
+		return runCheckWithEnvironment(args[1:], environment)
 	default:
 		return fmt.Errorf("unknown command %q; run 'ascdir help'", args[0])
 	}
@@ -84,8 +111,8 @@ func versionString() string {
 	return result
 }
 
-func usage() {
-	fmt.Print(`ascdir manages App Store Connect metadata as local files.
+func usage(writer io.Writer) {
+	fmt.Fprint(writer, `ascdir manages App Store Connect metadata as local files.
 
 Usage:
   ascdir init  --bundle-id ID --version VERSION [--platform IOS] [--locale en-US]
@@ -103,22 +130,22 @@ Authentication:
 `)
 }
 
-func runAuth(ctx context.Context, args []string) error {
+func runAuth(ctx context.Context, args []string, environment commandEnvironment) error {
 	if len(args) != 1 || args[0] != "check" {
 		return errors.New("usage: ascdir auth check")
 	}
-	client, err := newClient()
+	client, err := environment.newClient()
 	if err != nil {
 		return err
 	}
 	if err := client.CheckAuth(ctx); err != nil {
 		return err
 	}
-	fmt.Println("Authentication succeeded.")
+	fmt.Fprintln(environment.stdout, "Authentication succeeded.")
 	return nil
 }
 
-func runInit(ctx context.Context, args []string) error {
+func runInit(ctx context.Context, args []string, environment commandEnvironment) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	bundleID := fs.String("bundle-id", "", "app bundle identifier")
 	appVersion := fs.String("version", "", "App Store version")
@@ -135,36 +162,52 @@ func runInit(ctx context.Context, args []string) error {
 	if *bundleID == "" || *appVersion == "" {
 		return errors.New("--bundle-id and --version are required")
 	}
+	normalizedBundleID := strings.TrimSpace(*bundleID)
+	normalizedVersion := strings.TrimSpace(*appVersion)
+	normalizedPlatform := strings.ToUpper(strings.TrimSpace(*platform))
+	normalizedLocale := strings.TrimSpace(*locale)
+	if err := config.New("", normalizedBundleID, normalizedPlatform, normalizedVersion, []string{normalizedLocale}).Validate(); err != nil {
+		return fmt.Errorf("invalid init options: %w", err)
+	}
 	if !*force {
-		if _, err := os.Stat(*configPath); err == nil {
+		if info, err := os.Stat(*configPath); err == nil {
+			if info.IsDir() {
+				return fmt.Errorf("configuration path %s is a directory", *configPath)
+			}
 			return fmt.Errorf("%s already exists; use --force to replace it", *configPath)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("check existing configuration: %w", err)
 		}
+	} else if info, err := os.Stat(*configPath); err == nil && info.IsDir() {
+		return fmt.Errorf("configuration path %s is a directory", *configPath)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("check existing configuration: %w", err)
 	}
 
-	client, err := newClient()
+	client, err := environment.newClient()
 	if err != nil {
 		return err
 	}
-	remote, err := client.FetchMetadata(ctx, "", *bundleID, strings.ToUpper(*platform), *appVersion)
+	remote, err := client.FetchMetadata(ctx, "", normalizedBundleID, normalizedPlatform, normalizedVersion)
 	if err != nil {
 		return err
 	}
 	locales := remote.Locales()
 	if len(locales) == 0 {
-		locales = []string{*locale}
+		locales = []string{normalizedLocale}
 	}
-	cfg := config.New(remote.AppID, *bundleID, strings.ToUpper(*platform), *appVersion, locales)
+	cfg := config.New(remote.AppID, normalizedBundleID, normalizedPlatform, normalizedVersion, locales)
 	if err := config.Save(*configPath, cfg); err != nil {
 		return err
 	}
 	if err := metadata.WriteLocal(cfg, *configPath, remote); err != nil {
 		return err
 	}
-	fmt.Printf("Created %s with %d localization(s).\n", *configPath, len(locales))
+	fmt.Fprintf(environment.stdout, "Created %s with %d localization(s).\n", *configPath, len(locales))
 	return nil
 }
 
-func runPull(ctx context.Context, args []string) error {
+func runPull(ctx context.Context, args []string, environment commandEnvironment) error {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
 	configPath := fs.String("config", "ascdir.yaml", "configuration file")
 	dryRun := fs.Bool("dry-run", false, "show changes without overwriting local files")
@@ -178,7 +221,7 @@ func runPull(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	client, err := newClient()
+	client, err := environment.newClient()
 	if err != nil {
 		return err
 	}
@@ -192,22 +235,22 @@ func runPull(ctx context.Context, args []string) error {
 			return err
 		}
 		changes := metadata.Diff(metadata.Select(cfg, remote), local)
-		metadata.PrintChanges(os.Stdout, changes)
+		metadata.PrintChanges(environment.stdout, changes)
 		if len(changes) == 0 {
-			fmt.Println("No changes.")
+			fmt.Fprintln(environment.stdout, "No changes.")
 			return nil
 		}
-		fmt.Printf("Dry run: %d local change(s) not written.\n", len(changes))
+		fmt.Fprintf(environment.stdout, "Dry run: %d local change(s) not written.\n", len(changes))
 		return nil
 	}
 	if err := metadata.WriteLocal(cfg, *configPath, remote); err != nil {
 		return err
 	}
-	fmt.Printf("Pulled %d localization(s).\n", len(cfg.Localizations))
+	fmt.Fprintf(environment.stdout, "Pulled %d localization(s).\n", len(cfg.Localizations))
 	return nil
 }
 
-func runPush(ctx context.Context, args []string) error {
+func runPush(ctx context.Context, args []string, environment commandEnvironment) error {
 	fs := flag.NewFlagSet("push", flag.ContinueOnError)
 	configPath := fs.String("config", "ascdir.yaml", "configuration file")
 	dryRun := fs.Bool("dry-run", false, "show changes without updating App Store Connect")
@@ -228,11 +271,11 @@ func runPush(ctx context.Context, args []string) error {
 	}
 	if problems := metadata.Validate(desired); len(problems) > 0 {
 		for _, problem := range problems {
-			fmt.Fprintln(os.Stderr, "-", problem)
+			fmt.Fprintln(environment.stderr, "-", problem)
 		}
 		return fmt.Errorf("validation failed with %d problem(s)", len(problems))
 	}
-	client, err := newClient()
+	client, err := environment.newClient()
 	if err != nil {
 		return err
 	}
@@ -241,27 +284,36 @@ func runPush(ctx context.Context, args []string) error {
 		return err
 	}
 	changes := metadata.Diff(desired, remote)
-	metadata.PrintChanges(os.Stdout, changes)
-	if len(changes) == 0 {
-		fmt.Println("No changes.")
+	metadata.PrintChanges(environment.stdout, changes)
+	missingLocalizations := appstore.MissingLocalizationResources(remote, desired.Locales())
+	for _, missing := range missingLocalizations {
+		fmt.Fprintf(environment.stdout, "+ %s localization resource\n", missing)
+	}
+	operationCount := len(changes) + len(missingLocalizations)
+	if operationCount == 0 {
+		fmt.Fprintln(environment.stdout, "No changes.")
 		return nil
 	}
 	if *dryRun {
-		fmt.Printf("Dry run: %d change(s) not applied.\n", len(changes))
+		fmt.Fprintf(environment.stdout, "Dry run: %d operation(s) not applied.\n", operationCount)
 		return nil
 	}
 	clears := metadata.ClearingChanges(changes)
 	if len(clears) > 0 && !*allowEmpty {
 		return fmt.Errorf("%d change(s) would clear non-empty remote fields; review with --dry-run and rerun with --allow-empty", len(clears))
 	}
-	if err := client.ApplyMetadata(ctx, remote, changes); err != nil {
+	if err := client.ApplyMetadata(ctx, remote, desired.Locales(), changes); err != nil {
 		return err
 	}
-	fmt.Printf("Applied %d change(s).\n", len(changes))
+	fmt.Fprintf(environment.stdout, "Applied %d operation(s).\n", operationCount)
 	return nil
 }
 
 func runCheck(args []string) error {
+	return runCheckWithEnvironment(args, defaultCommandEnvironment())
+}
+
+func runCheckWithEnvironment(args []string, environment commandEnvironment) error {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	configPath := fs.String("config", "ascdir.yaml", "configuration file")
 	if err := fs.Parse(args); err != nil {
@@ -280,12 +332,12 @@ func runCheck(args []string) error {
 	}
 	problems := metadata.Validate(values)
 	for _, problem := range problems {
-		fmt.Println("-", problem)
+		fmt.Fprintln(environment.stdout, "-", problem)
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("validation failed with %d problem(s)", len(problems))
 	}
-	fmt.Printf("Configuration and %d localization(s) are valid.\n", len(values.Localizations))
+	fmt.Fprintf(environment.stdout, "Configuration and %d localization(s) are valid.\n", len(values.Localizations))
 	return nil
 }
 

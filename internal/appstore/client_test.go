@@ -61,7 +61,7 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 		{Locale: "en-US", Field: "name", Before: "Old Name", After: "New Name"},
 		{Locale: "en-US", Field: "description", Before: "Old description", After: "New description"},
 	}
-	if err := client.ApplyMetadata(context.Background(), remote, changes); err != nil {
+	if err := client.ApplyMetadata(context.Background(), remote, []string{"en-US"}, changes); err != nil {
 		t.Fatal(err)
 	}
 	if len(mutations) != 2 {
@@ -165,6 +165,24 @@ func TestResolveAppUsesConfiguredIDAndVerifiesBundleID(t *testing.T) {
 	}
 }
 
+func TestSelectAppInfoMatchesVersionState(t *testing.T) {
+	t.Parallel()
+	infos := []resource{
+		{ID: "live", Attributes: map[string]any{"state": "READY_FOR_DISTRIBUTION"}},
+		{ID: "draft", Attributes: map[string]any{"state": "PREPARE_FOR_SUBMISSION"}},
+	}
+	selected, err := selectAppInfo(infos, "PREPARE_FOR_SUBMISSION")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != "draft" {
+		t.Fatalf("selected app info = %q", selected.ID)
+	}
+	if _, err := selectAppInfo(infos, "WAITING_FOR_REVIEW"); err == nil {
+		t.Fatal("ambiguous app infos were accepted")
+	}
+}
+
 func TestApplyMetadataCreatesMatchingLocalizationsInSafeOrder(t *testing.T) {
 	t.Parallel()
 	var paths []string
@@ -190,7 +208,7 @@ func TestApplyMetadataCreatesMatchingLocalizationsInSafeOrder(t *testing.T) {
 		{Locale: "fr-FR", Field: "name", After: "Exemple"},
 		{Locale: "fr-FR", Field: "description", After: "Description"},
 	}
-	if err := client.ApplyMetadata(context.Background(), remote, changes); err != nil {
+	if err := client.ApplyMetadata(context.Background(), remote, []string{"fr-FR"}, changes); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"/v1/appInfoLocalizations", "/v1/appStoreVersionLocalizations"}
@@ -201,6 +219,99 @@ func TestApplyMetadataCreatesMatchingLocalizationsInSafeOrder(t *testing.T) {
 		if paths[index] != want[index] {
 			t.Fatalf("paths = %#v, want %#v", paths, want)
 		}
+	}
+}
+
+func TestApplyMetadataCreatesMissingCounterpartLocalization(t *testing.T) {
+	t.Parallel()
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	remote := Metadata{AppInfoID: "info-1", VersionID: "version-1", Localizations: map[string]Localization{}}
+	changes := []Change{{Locale: "fr-FR", Field: "description", After: "Description"}}
+	if err := client.ApplyMetadata(context.Background(), remote, []string{"fr-FR"}, changes); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/v1/appInfoLocalizations", "/v1/appStoreVersionLocalizations"}
+	if len(paths) != len(want) {
+		t.Fatalf("paths = %#v, want %#v", paths, want)
+	}
+	for index := range want {
+		if paths[index] != want[index] {
+			t.Fatalf("paths = %#v, want %#v", paths, want)
+		}
+	}
+}
+
+func TestApplyMetadataRepairsLocaleWithoutValueChanges(t *testing.T) {
+	t.Parallel()
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	remote := Metadata{
+		AppInfoID: "info-1", VersionID: "version-1",
+		Localizations: map[string]Localization{"fr-FR": {AppInfoLocalizationID: "info-loc-1"}},
+	}
+	missing := MissingLocalizationResources(remote, []string{"fr-FR"})
+	if len(missing) != 1 || missing[0] != "fr-FR.version" {
+		t.Fatalf("missing = %#v", missing)
+	}
+	if err := client.ApplyMetadata(context.Background(), remote, []string{"fr-FR"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "/v1/appStoreVersionLocalizations" {
+		t.Fatalf("paths = %#v", paths)
+	}
+}
+
+func TestApplyMetadataRejectsUnknownField(t *testing.T) {
+	t.Parallel()
+	client := testClient(t, "https://example.invalid")
+	err := client.ApplyMetadata(context.Background(), Metadata{}, []string{"en-US"}, []Change{{Locale: "en-US", Field: "unknown"}})
+	if err == nil || !strings.Contains(err.Error(), "unsupported metadata field") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAPIErrorIncludesAllErrorsAndRequestID(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Request-ID", "request-123")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"errors":[{"code":"FIRST","title":"First","detail":"one"},{"code":"SECOND","title":"Second","detail":"two"}]}`))
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	err := client.CheckAuth(context.Background())
+	if err == nil {
+		t.Fatal("request succeeded")
+	}
+	for _, want := range []string{"FIRST", "SECOND", "request-123"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+func TestRetryDelayHonorsReasonableRetryAfter(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	if got := retryDelay(0, "90", now); got != 90*time.Second {
+		t.Fatalf("seconds delay = %s", got)
+	}
+	if got := retryDelay(0, now.Add(2*time.Minute).Format(http.TimeFormat), now); got != 2*time.Minute {
+		t.Fatalf("date delay = %s", got)
+	}
+	if got := retryDelay(2, "invalid", now); got != 4*time.Second {
+		t.Fatalf("backoff delay = %s", got)
 	}
 }
 

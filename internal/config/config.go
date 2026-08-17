@@ -122,12 +122,20 @@ func (c Config) Validate() error {
 		return errors.New("at least one localization is required")
 	}
 	seen := map[string]string{}
-	for locale, files := range c.Localizations {
+	for _, locale := range SortedLocales(c.Localizations) {
+		files := c.Localizations[locale]
 		if strings.TrimSpace(locale) == "" {
 			return errors.New("localization locale cannot be empty")
 		}
 		managedFields := 0
-		for field, path := range files.Paths() {
+		paths := files.Paths()
+		fields := make([]string, 0, len(paths))
+		for field := range paths {
+			fields = append(fields, field)
+		}
+		sort.Strings(fields)
+		for _, field := range fields {
+			path := paths[field]
 			if path == "" {
 				continue
 			}

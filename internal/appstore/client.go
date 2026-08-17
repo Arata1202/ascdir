@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"sort"
@@ -24,6 +25,7 @@ type Client struct {
 	now         func() time.Time
 	maxRetries  int
 	sleep       func(context.Context, time.Duration) error
+	jitter      func(time.Duration) time.Duration
 }
 
 type Option func(*Client)
@@ -82,6 +84,7 @@ func NewClient(credentials Credentials, baseURL string, options ...Option) *Clie
 		now:         time.Now,
 		maxRetries:  3,
 		sleep:       sleepContext,
+		jitter:      retryJitter,
 	}
 	for _, option := range options {
 		option(client)
@@ -110,14 +113,29 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	}
 	result := Metadata{AppID: app.ID, Localizations: map[string]Localization{}}
 
-	infos, err := c.list(ctx, fmt.Sprintf("/v1/apps/%s/appInfos?limit=10", result.AppID))
+	infos, err := c.list(ctx, fmt.Sprintf("/v1/apps/%s/appInfos?fields%%5BappInfos%%5D=state&limit=10", result.AppID))
 	if err != nil {
 		return Metadata{}, err
 	}
-	if len(infos) == 0 {
-		return Metadata{}, errors.New("app has no app info resource")
+
+	versionsPath := fmt.Sprintf("/v1/apps/%s/appStoreVersions?filter%%5Bplatform%%5D=%s&filter%%5BversionString%%5D=%s&fields%%5BappStoreVersions%%5D=appVersionState&limit=2", result.AppID, url.QueryEscape(platform), url.QueryEscape(version))
+	versions, err := c.list(ctx, versionsPath)
+	if err != nil {
+		return Metadata{}, err
 	}
-	result.AppInfoID = infos[0].ID
+	if len(versions) == 0 {
+		return Metadata{}, fmt.Errorf("version %s for platform %s was not found", version, platform)
+	}
+	if len(versions) > 1 {
+		return Metadata{}, fmt.Errorf("multiple versions matched %s for platform %s", version, platform)
+	}
+	result.VersionID = versions[0].ID
+	appInfo, err := selectAppInfo(infos, stringAttribute(versions[0], "appVersionState"))
+	if err != nil {
+		return Metadata{}, err
+	}
+	result.AppInfoID = appInfo.ID
+
 	infoLocs, err := c.list(ctx, fmt.Sprintf("/v1/appInfos/%s/appInfoLocalizations?limit=200", result.AppInfoID))
 	if err != nil {
 		return Metadata{}, err
@@ -133,18 +151,6 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 		result.Localizations[locale] = loc
 	}
 
-	versionsPath := fmt.Sprintf("/v1/apps/%s/appStoreVersions?filter%%5Bplatform%%5D=%s&filter%%5BversionString%%5D=%s&limit=2", result.AppID, url.QueryEscape(platform), url.QueryEscape(version))
-	versions, err := c.list(ctx, versionsPath)
-	if err != nil {
-		return Metadata{}, err
-	}
-	if len(versions) == 0 {
-		return Metadata{}, fmt.Errorf("version %s for platform %s was not found", version, platform)
-	}
-	if len(versions) > 1 {
-		return Metadata{}, fmt.Errorf("multiple versions matched %s for platform %s", version, platform)
-	}
-	result.VersionID = versions[0].ID
 	versionLocs, err := c.list(ctx, fmt.Sprintf("/v1/appStoreVersions/%s/appStoreVersionLocalizations?limit=200", result.VersionID))
 	if err != nil {
 		return Metadata{}, err
@@ -160,6 +166,29 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 		result.Localizations[locale] = loc
 	}
 	return result, nil
+}
+
+func selectAppInfo(infos []resource, versionState string) (resource, error) {
+	if len(infos) == 0 {
+		return resource{}, errors.New("app has no app info resource")
+	}
+	if len(infos) == 1 {
+		return infos[0], nil
+	}
+	var matches []resource
+	var states []string
+	for _, info := range infos {
+		state := stringAttribute(info, "state")
+		states = append(states, state)
+		if versionState != "" && state == versionState {
+			matches = append(matches, info)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	sort.Strings(states)
+	return resource{}, fmt.Errorf("could not select one app info for version state %q from app info states %q", versionState, states)
 }
 
 var infoFields = map[string]string{
@@ -179,14 +208,35 @@ var versionFields = map[string]string{
 	"marketing_url":    "marketingUrl",
 }
 
-func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, changes []Change) error {
+func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []string, changes []Change) error {
 	grouped := map[string]map[string]string{}
+	touchedLocales := map[string]bool{}
+	for _, locale := range locales {
+		touchedLocales[locale] = true
+	}
 	for _, change := range changes {
-		key := change.Locale + "\x00" + fieldGroup(change.Field)
+		group, ok := fieldGroup(change.Field)
+		if !ok {
+			return fmt.Errorf("unsupported metadata field %q", change.Field)
+		}
+		key := change.Locale + "\x00" + group
 		if grouped[key] == nil {
 			grouped[key] = map[string]string{}
 		}
 		grouped[key][change.Field] = change.After
+		touchedLocales[change.Locale] = true
+	}
+	// Apple requires app-info and version localizations to contain the same
+	// locale set. Add an empty group when necessary so a touched locale is
+	// always created on both resources, even when only one side is managed.
+	for locale := range touchedLocales {
+		localization := remote.Localizations[locale]
+		if localization.AppInfoLocalizationID == "" && grouped[locale+"\x00info"] == nil {
+			grouped[locale+"\x00info"] = map[string]string{}
+		}
+		if localization.VersionLocalizationID == "" && grouped[locale+"\x00version"] == nil {
+			grouped[locale+"\x00version"] = map[string]string{}
+		}
 	}
 	keys := make([]string, 0, len(grouped))
 	for key := range grouped {
@@ -209,7 +259,11 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, changes []C
 		}
 		attributes := map[string]string{}
 		for field, value := range grouped[key] {
-			attributes[fields[field]] = value
+			remoteField, ok := fields[field]
+			if !ok {
+				return fmt.Errorf("metadata field %q does not belong to the %s localization", field, group)
+			}
+			attributes[remoteField] = value
 		}
 		if resourceID == "" {
 			attributes["locale"] = locale
@@ -221,6 +275,21 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, changes []C
 		}
 	}
 	return nil
+}
+
+func MissingLocalizationResources(remote Metadata, locales []string) []string {
+	var missing []string
+	for _, locale := range locales {
+		localization := remote.Localizations[locale]
+		if localization.AppInfoLocalizationID == "" {
+			missing = append(missing, locale+".app_info")
+		}
+		if localization.VersionLocalizationID == "" {
+			missing = append(missing, locale+".version")
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 func (c *Client) resolveApp(ctx context.Context, appID, bundleID string) (resource, error) {
@@ -254,11 +323,14 @@ type Change struct {
 	After  string
 }
 
-func fieldGroup(field string) string {
+func fieldGroup(field string) (string, bool) {
 	if _, ok := infoFields[field]; ok {
-		return "info"
+		return "info", true
 	}
-	return "version"
+	if _, ok := versionFields[field]; ok {
+		return "version", true
+	}
+	return "", false
 }
 
 func (c *Client) createLocalization(ctx context.Context, resourceType, parentType, parentID string, attributes map[string]string) error {
@@ -331,13 +403,14 @@ func (c *Client) doJSON(ctx context.Context, method, path string, requestBody, r
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/json")
+		req.Header.Set("User-Agent", "ascdir")
 		if requestData != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			if attempt < c.maxRetries && methodRetryable(method) {
-				if sleepErr := c.sleep(ctx, retryDelay(attempt, "", c.now())); sleepErr != nil {
+				if sleepErr := c.sleep(ctx, c.jitter(retryDelay(attempt, "", c.now()))); sleepErr != nil {
 					return sleepErr
 				}
 				continue
@@ -358,15 +431,27 @@ func (c *Client) doJSON(ctx context.Context, method, path string, requestBody, r
 			return nil
 		}
 		if attempt < c.maxRetries && statusRetryable(method, resp.StatusCode) {
-			if err := c.sleep(ctx, retryDelay(attempt, resp.Header.Get("Retry-After"), c.now())); err != nil {
+			retryAfter := resp.Header.Get("Retry-After")
+			delay := retryDelay(attempt, retryAfter, c.now())
+			if retryAfter == "" {
+				delay = c.jitter(delay)
+			}
+			if err := c.sleep(ctx, delay); err != nil {
 				return err
 			}
 			continue
 		}
 		var apiError errorResponse
 		if json.Unmarshal(data, &apiError) == nil && len(apiError.Errors) > 0 {
-			item := apiError.Errors[0]
-			return fmt.Errorf("the App Store Connect API reported %s (%s): %s", item.Title, item.Code, item.Detail)
+			messages := make([]string, 0, len(apiError.Errors))
+			for _, item := range apiError.Errors {
+				message := fmt.Sprintf("%s (%s): %s", item.Title, item.Code, item.Detail)
+				messages = append(messages, strings.TrimSpace(message))
+			}
+			if requestID := resp.Header.Get("X-Request-ID"); requestID != "" {
+				messages = append(messages, "request ID "+requestID)
+			}
+			return fmt.Errorf("the App Store Connect API reported %s", strings.Join(messages, "; "))
 		}
 		return fmt.Errorf("the App Store Connect API returned %s", resp.Status)
 	}
@@ -403,15 +488,25 @@ func statusRetryable(method string, status int) bool {
 }
 
 func retryDelay(attempt int, retryAfter string, now time.Time) time.Duration {
-	const maximum = 30 * time.Second
+	const maximumRetryAfter = 5 * time.Minute
 	if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds >= 0 {
-		return min(time.Duration(seconds)*time.Second, maximum)
+		if seconds >= int(maximumRetryAfter/time.Second) {
+			return maximumRetryAfter
+		}
+		return time.Duration(seconds) * time.Second
 	}
 	if parsed, err := http.ParseTime(retryAfter); err == nil {
-		return min(max(parsed.Sub(now), 0), maximum)
+		return min(max(parsed.Sub(now), 0), maximumRetryAfter)
 	}
 	delay := time.Second << attempt
-	return min(delay, maximum)
+	return min(delay, 30*time.Second)
+}
+
+func retryJitter(delay time.Duration) time.Duration {
+	if delay <= 0 {
+		return 0
+	}
+	return delay + time.Duration(rand.Int64N(int64(delay/2)+1))
 }
 
 func sleepContext(ctx context.Context, duration time.Duration) error {

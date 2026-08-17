@@ -5,9 +5,13 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -54,5 +58,49 @@ func TestTokenCreatesValidES256JWT(t *testing.T) {
 	s := new(big.Int).SetBytes(signature[32:])
 	if !ecdsa.Verify(&key.PublicKey, digest[:], r, s) {
 		t.Fatal("JWT signature did not verify")
+	}
+}
+
+func TestCredentialsFromEnv(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(t.TempDir(), "AuthKey_TEST.p8")
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ASC_ISSUER_ID", " issuer ")
+	t.Setenv("ASC_KEY_ID", " key-id ")
+	t.Setenv("ASC_PRIVATE_KEY_PATH", keyPath)
+	credentials, err := CredentialsFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credentials.IssuerID != "issuer" || credentials.KeyID != "key-id" || credentials.Key == nil {
+		t.Fatalf("credentials = %#v", credentials)
+	}
+}
+
+func TestCredentialsFromEnvRejectsMissingAndInvalidKeys(t *testing.T) {
+	t.Setenv("ASC_ISSUER_ID", "")
+	t.Setenv("ASC_KEY_ID", "")
+	t.Setenv("ASC_PRIVATE_KEY_PATH", "")
+	if _, err := CredentialsFromEnv(); err == nil {
+		t.Fatal("missing credentials succeeded")
+	}
+	t.Setenv("ASC_ISSUER_ID", "issuer")
+	t.Setenv("ASC_KEY_ID", "key")
+	keyPath := filepath.Join(t.TempDir(), "invalid.p8")
+	if err := os.WriteFile(keyPath, []byte("not pem"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ASC_PRIVATE_KEY_PATH", keyPath)
+	if _, err := CredentialsFromEnv(); err == nil || !strings.Contains(err.Error(), "PEM") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
