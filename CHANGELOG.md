@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-17
+
 ### Added
 
 - Initialize metadata projects from an existing App Store version
@@ -14,3 +16,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Validate App Store character limits and URLs locally
 - Authenticate with short-lived App Store Connect API JWTs
 - Retry safe requests after rate limits and transient server failures
+
+[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Arata1202/ascdir/releases/tag/v1.0.0

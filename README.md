@@ -16,7 +16,26 @@
 
 ## Installation
 
-Build from source with Go 1.26.6 or later:
+Download the archive for your platform from [GitHub Releases](https://github.com/Arata1202/ascdir/releases/latest), extract it, and place `ascdir` (or `ascdir.exe` on Windows) on your `PATH`.
+
+Verify the archive before extracting it:
+
+```sh
+# Linux
+sha256sum --check checksums.txt --ignore-missing
+
+# macOS
+shasum -a 256 ascdir_*.tar.gz
+
+# Windows PowerShell
+Get-FileHash .\ascdir_*.zip -Algorithm SHA256
+```
+
+Compare the printed digest with the corresponding entry in `checksums.txt`.
+
+Each release also includes a software bill of materials (SBOM) for its archives.
+
+Alternatively, install from source with Go 1.26.6 or later:
 
 ```sh
 go install github.com/Arata1202/ascdir/cmd/ascdir@latest

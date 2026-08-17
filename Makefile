@@ -7,10 +7,10 @@ test:
 	go test -race -shuffle=on ./...
 
 fmt:
-	gofmt -w $$(find . -name '*.go' -type f)
+	gofmt -w .
 
 fmt-check:
-	test -z "$$(gofmt -l $$(find . -name '*.go' -type f))"
+	test -z "$$(gofmt -l .)"
 
 vet:
 	go vet ./...
