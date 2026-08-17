@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -102,5 +103,24 @@ func TestCredentialsFromEnvRejectsMissingAndInvalidKeys(t *testing.T) {
 	t.Setenv("ASC_PRIVATE_KEY_PATH", keyPath)
 	if _, err := CredentialsFromEnv(); err == nil || !strings.Contains(err.Error(), "PEM") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrivateKeyPermissionWarning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix permission bits")
+	}
+	keyPath := filepath.Join(t.TempDir(), "AuthKey_TEST.p8")
+	if err := os.WriteFile(keyPath, []byte("key"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if warning := PrivateKeyPermissionWarning(keyPath); !strings.Contains(warning, "0600") {
+		t.Fatalf("warning = %q", warning)
+	}
+	if err := os.Chmod(keyPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if warning := PrivateKeyPermissionWarning(keyPath); warning != "" {
+		t.Fatalf("warning = %q", warning)
 	}
 }

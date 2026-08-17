@@ -16,7 +16,21 @@
 
 ## Installation
 
+With Homebrew on macOS or Linux:
+
+```sh
+brew install Arata1202/tap/ascdir
+```
+
 Download the archive for your platform from [GitHub Releases](https://github.com/Arata1202/ascdir/releases/latest), extract it, and place `ascdir` (or `ascdir.exe` on Windows) on your `PATH`.
+
+On macOS or Linux, the checksum-verifying installer can do this automatically:
+
+```sh
+curl -fsSLO https://github.com/Arata1202/ascdir/releases/latest/download/install.sh
+sh install.sh
+rm install.sh
+```
 
 Verify the archive before extracting it:
 
@@ -61,6 +75,12 @@ export ASC_PRIVATE_KEY_PATH="$HOME/.private_keys/AuthKey_ABC123DEFG.p8"
 Never commit the private key. `ascdir` ignores `*.p8` and `.env` by default, but credentials should still be stored outside the repository or in a CI secret store.
 
 The HTTP timeout defaults to 30 seconds. Set `ASCDIR_TIMEOUT` to a positive Go duration such as `45s` when needed.
+
+Remove locally stored credentials without deleting the `.p8` private key:
+
+```sh
+ascdir auth logout
+```
 
 ## Quick start
 
@@ -147,6 +167,14 @@ When a configured locale does not exist remotely, `push` creates both the app-le
 
 Validates the configured private key, creates a short-lived JWT locally, and performs a read-only API request.
 
+### `ascdir auth login`
+
+Prompts for the issuer ID, key ID, and `.p8` path, validates the private key, and saves the configuration with user-only file permissions. On Unix systems, ascdir warns when the private key is readable by other users.
+
+### `ascdir auth logout`
+
+Removes the credentials saved by `auth login`. It never deletes the `.p8` private key. Environment variables remain untouched.
+
 ### `ascdir init`
 
 Finds an existing app and version, generates the configuration, and pulls its localizations. It refuses to overwrite an existing configuration unless `--force` is supplied.
@@ -172,6 +200,14 @@ Apple only permits most version metadata to change while the version is in an ed
 
 Checks the configuration, required files, common character limits, and HTTP(S) URLs without contacting App Store Connect.
 
+### `ascdir completion`
+
+Prints shell completion for Bash, Zsh, Fish, or PowerShell. For example, enable Zsh completion for the current session with:
+
+```sh
+source <(ascdir completion zsh)
+```
+
 ## Scope
 
 `ascdir` manages localized text metadata. It does not upload builds or screenshots, submit versions for review, manage TestFlight, certificates, subscriptions, analytics, or customer reviews.
@@ -179,7 +215,7 @@ Checks the configuration, required files, common character limits, and HTTP(S) U
 ## Security
 
 - Authentication uses short-lived ES256 JSON Web Tokens generated locally.
-- The `.p8` private key is read from the path in `ASC_PRIVATE_KEY_PATH` and never leaves the machine. Apple receives only the signed JWT.
+- The `.p8` private key is read from the configured local path and never leaves the machine. Apple receives only the signed JWT.
 - API errors are reported without printing credentials or JWTs.
 - `push --dry-run` never sends mutation requests.
 - Pagination links are restricted to the configured App Store Connect API origin, preventing bearer tokens from being forwarded to another host.
@@ -197,7 +233,7 @@ make build
 
 Tests use generated keys and local HTTP servers. They never require real App Store Connect credentials or contact the production API.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines, [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations, and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## License
 

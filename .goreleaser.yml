@@ -18,6 +18,8 @@ builds:
 
 archives:
   - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -31,6 +33,8 @@ sboms:
 release:
   draft: false
   prerelease: auto
+  extra_files:
+    - glob: ./install.sh
 
 changelog:
   sort: asc

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -59,6 +60,17 @@ func CredentialsFromValues(issuerID, keyID, keyPath string) (Credentials, error)
 		return Credentials{}, errors.New("private key must be an EC P-256 key")
 	}
 	return Credentials{IssuerID: issuerID, KeyID: keyID, Key: key}, nil
+}
+
+func PrivateKeyPermissionWarning(keyPath string) string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	info, err := os.Stat(keyPath)
+	if err != nil || info.Mode().Perm()&0o077 == 0 {
+		return ""
+	}
+	return fmt.Sprintf("private key %q has permissions %#o; recommend 0600", keyPath, info.Mode().Perm())
 }
 
 func (c Credentials) Token(now time.Time) (string, error) {

@@ -72,6 +72,20 @@ func Save(config Config) (string, error) {
 	return path, nil
 }
 
+func Remove() (string, bool, error) {
+	path, err := Path()
+	if err != nil {
+		return "", false, err
+	}
+	if err := os.Remove(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return path, false, nil
+		}
+		return path, false, fmt.Errorf("remove credentials config: %w", err)
+	}
+	return path, true, nil
+}
+
 func (config Config) Validate() error {
 	if strings.TrimSpace(config.IssuerID) == "" || strings.TrimSpace(config.KeyID) == "" || strings.TrimSpace(config.PrivateKeyPath) == "" {
 		return errors.New("issuer ID, key ID, and private key path are required")

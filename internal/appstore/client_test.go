@@ -281,6 +281,35 @@ func TestApplyMetadataRejectsUnknownField(t *testing.T) {
 	}
 }
 
+func TestApplyMetadataErrorIdentifiesPartialProgress(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		if requests == 1 {
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"errors":[{"code":"INVALID","detail":"rejected"}]}`))
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	remote := Metadata{AppInfoID: "info-1", VersionID: "version-1", Localizations: map[string]Localization{}}
+	err := client.ApplyMetadata(context.Background(), remote, []string{"fr-FR"}, []Change{
+		{Locale: "fr-FR", Field: "name", After: "Exemple"},
+		{Locale: "fr-FR", Field: "description", After: "Description"},
+	})
+	if err == nil {
+		t.Fatal("partial failure succeeded")
+	}
+	for _, want := range []string{"fr-FR.version", "1 successful", "INVALID"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
 func TestAPIErrorIncludesAllErrorsAndRequestID(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

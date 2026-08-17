@@ -159,6 +159,29 @@ func TestRunAuthLogin(t *testing.T) {
 	}
 }
 
+func TestRunAuthLogout(t *testing.T) {
+	configHome := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("AppData", configHome)
+	} else {
+		t.Setenv("XDG_CONFIG_HOME", configHome)
+	}
+	keyPath := filepath.Join(t.TempDir(), "AuthKey_TEST.p8")
+	if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authconfig.Save(authconfig.Config{IssuerID: "issuer", KeyID: "key", PrivateKeyPath: keyPath}); err != nil {
+		t.Fatal(err)
+	}
+	environment, stdout, _ := testEnvironment(nil)
+	if err := runWithEnvironment(context.Background(), []string{"auth", "logout"}, environment); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Removed stored credentials") {
+		t.Fatalf("unexpected output: %q", stdout.String())
+	}
+}
+
 func TestRunInitPullAndPush(t *testing.T) {
 	t.Parallel()
 	directory := t.TempDir()

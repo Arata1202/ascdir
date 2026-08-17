@@ -243,7 +243,7 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	for _, key := range keys {
+	for index, key := range keys {
 		parts := strings.SplitN(key, "\x00", 2)
 		locale, group := parts[0], parts[1]
 		loc := remote.Localizations[locale]
@@ -268,13 +268,20 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		if resourceID == "" {
 			attributes["locale"] = locale
 			if err := c.createLocalization(ctx, resourceType, parentType, parentID, attributes); err != nil {
-				return err
+				return applyLocalizationError(locale, group, index, err)
 			}
 		} else if err := c.patchLocalization(ctx, resourceType, resourceID, attributes); err != nil {
-			return err
+			return applyLocalizationError(locale, group, index, err)
 		}
 	}
 	return nil
+}
+
+func applyLocalizationError(locale, group string, completed int, err error) error {
+	if completed == 0 {
+		return fmt.Errorf("apply %s.%s localization: %w", locale, group, err)
+	}
+	return fmt.Errorf("apply %s.%s localization after %d successful localization request(s): %w", locale, group, completed, err)
 }
 
 func MissingLocalizationResources(remote Metadata, locales []string) []string {

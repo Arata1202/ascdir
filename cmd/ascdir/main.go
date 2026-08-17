@@ -46,7 +46,7 @@ func defaultCommandEnvironment() commandEnvironment {
 		stdout: os.Stdout,
 		stderr: os.Stderr,
 		newClient: func() (storeClient, error) {
-			return newClient()
+			return newClient(os.Stderr)
 		},
 	}
 }
@@ -90,6 +90,8 @@ func runWithEnvironment(ctx context.Context, args []string, environment commandE
 		return runPush(ctx, args[1:], environment)
 	case "check":
 		return runCheckWithEnvironment(args[1:], environment)
+	case "completion":
+		return runCompletion(args[1:], environment.stdout)
 	default:
 		return fmt.Errorf("unknown command %q; run 'ascdir help'", args[0])
 	}
@@ -123,9 +125,11 @@ Usage:
   ascdir init  --bundle-id ID --version VERSION [--platform IOS] [--locale en-US]
   ascdir auth login
   ascdir auth check
+  ascdir auth logout
   ascdir pull  [--config ascdir.yaml] [--dry-run]
   ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty]
   ascdir check [--config ascdir.yaml]
+  ascdir completion <bash|zsh|fish|powershell>
   ascdir version
 
 Authentication:
@@ -140,8 +144,11 @@ func runAuth(ctx context.Context, args []string, environment commandEnvironment)
 	if len(args) == 1 && args[0] == "login" {
 		return runAuthLogin(environment)
 	}
+	if len(args) == 1 && args[0] == "logout" {
+		return runAuthLogout(environment)
+	}
 	if len(args) != 1 || args[0] != "check" {
-		return errors.New("usage: ascdir auth <login|check>")
+		return errors.New("usage: ascdir auth <login|check|logout>")
 	}
 	client, err := environment.newClient()
 	if err != nil {
@@ -190,11 +197,30 @@ func runAuthLogin(environment commandEnvironment) error {
 	if _, err := appstore.CredentialsFromValues(issuerID, keyID, keyPath); err != nil {
 		return err
 	}
+	if warning := appstore.PrivateKeyPermissionWarning(keyPath); warning != "" {
+		fmt.Fprintln(environment.stderr, "warning:", warning)
+	}
 	path, err := authconfig.Save(authconfig.Config{IssuerID: issuerID, KeyID: keyID, PrivateKeyPath: keyPath})
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(environment.stdout, "Credentials saved to %s.\n", path)
+	return nil
+}
+
+func runAuthLogout(environment commandEnvironment) error {
+	path, removed, err := authconfig.Remove()
+	if err != nil {
+		return err
+	}
+	if !removed {
+		fmt.Fprintln(environment.stdout, "No stored credentials.")
+		return nil
+	}
+	fmt.Fprintf(environment.stdout, "Removed stored credentials from %s.\n", path)
+	if os.Getenv("ASC_ISSUER_ID") != "" || os.Getenv("ASC_KEY_ID") != "" || os.Getenv("ASC_PRIVATE_KEY_PATH") != "" {
+		fmt.Fprintln(environment.stderr, "warning: ASC_ISSUER_ID, ASC_KEY_ID, or ASC_PRIVATE_KEY_PATH is still set and takes precedence")
+	}
 	return nil
 }
 
@@ -401,7 +427,7 @@ func requireNoArgs(fs *flag.FlagSet) error {
 	return nil
 }
 
-func newClient() (*appstore.Client, error) {
+func newClient(stderr io.Writer) (*appstore.Client, error) {
 	issuerID, keyID, keyPath := os.Getenv("ASC_ISSUER_ID"), os.Getenv("ASC_KEY_ID"), os.Getenv("ASC_PRIVATE_KEY_PATH")
 	var credentials appstore.Credentials
 	var err error
@@ -412,10 +438,14 @@ func newClient() (*appstore.Client, error) {
 		if loadErr != nil {
 			return nil, loadErr
 		}
+		keyPath = stored.PrivateKeyPath
 		credentials, err = appstore.CredentialsFromValues(stored.IssuerID, stored.KeyID, stored.PrivateKeyPath)
 	}
 	if err != nil {
 		return nil, err
+	}
+	if warning := appstore.PrivateKeyPermissionWarning(keyPath); warning != "" {
+		fmt.Fprintln(stderr, "warning:", warning)
 	}
 	timeout := 30 * time.Second
 	if value := os.Getenv("ASCDIR_TIMEOUT"); value != "" {

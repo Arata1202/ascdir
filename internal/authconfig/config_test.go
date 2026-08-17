@@ -48,3 +48,25 @@ func TestLoadMissing(t *testing.T) {
 		t.Fatal("missing config loaded successfully")
 	}
 }
+
+func TestRemove(t *testing.T) {
+	configHome := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("AppData", configHome)
+	} else {
+		t.Setenv("XDG_CONFIG_HOME", configHome)
+	}
+	keyPath := filepath.Join(t.TempDir(), "AuthKey_TEST.p8")
+	if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Save(Config{IssuerID: "issuer", KeyID: "key", PrivateKeyPath: keyPath}); err != nil {
+		t.Fatal(err)
+	}
+	if _, removed, err := Remove(); err != nil || !removed {
+		t.Fatalf("Remove() = removed %v, error %v", removed, err)
+	}
+	if _, removed, err := Remove(); err != nil || removed {
+		t.Fatalf("second Remove() = removed %v, error %v", removed, err)
+	}
+}

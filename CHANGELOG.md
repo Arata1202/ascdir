@@ -15,6 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Protect remote fields from accidental clearing
 - Validate App Store character limits and URLs locally
 - Authenticate with short-lived App Store Connect API JWTs
+- Save, verify, and remove local API credential configuration
+- Generate shell completion for Bash, Zsh, Fish, and PowerShell
+- Install verified release archives with the macOS and Linux installer
 - Retry safe requests after rate limits and transient server failures
 
 [Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.0.0...HEAD
