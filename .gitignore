@@ -1,0 +1,7 @@
+/ascdir
+/dist/
+/.idea/
+/.vscode/
+.DS_Store
+*.p8
+.env
