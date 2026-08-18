@@ -45,6 +45,9 @@ func TestReadAndDiffLocalAppPreviews(t *testing.T) {
 	if len(changes) != 1 || changes[0].AssetSet == nil || changes[0].AssetSet.SetID != "set-1" {
 		t.Fatalf("changes = %#v", changes)
 	}
+	if changes[0].AssetSet.LocalizationID != "loc-1" || changes[0].AssetSet.After[0].Path != assets[0].Path {
+		t.Fatalf("asset change lost its localization or local path: %#v", changes[0].AssetSet)
+	}
 	if AssetSetDeletesRemoteFiles(*changes[0].AssetSet) {
 		t.Fatal("poster-frame-only update was treated as a video deletion")
 	}

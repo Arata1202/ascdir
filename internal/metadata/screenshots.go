@@ -138,11 +138,10 @@ func screenshotChanges(desired, remote appstore.Metadata) []appstore.Change {
 				continue
 			}
 			setID := remote.ScreenshotSetIDs[locale][displayType]
-			for index := range after {
-				after[index].Path = remote.Localizations[locale].VersionLocalizationID
-			}
 			changes = append(changes, appstore.Change{AssetSet: &appstore.AssetSetChange{
-				Kind: "screenshots", Locale: locale, DisplayType: displayType, SetID: setID, Before: before, After: after,
+				Kind: "screenshots", Locale: locale, DisplayType: displayType,
+				LocalizationID: remote.Localizations[locale].VersionLocalizationID,
+				SetID:          setID, Before: before, After: after,
 			}})
 		}
 	}

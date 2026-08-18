@@ -78,12 +78,13 @@ type Asset struct {
 }
 
 type AssetSetChange struct {
-	Kind        string
-	Locale      string
-	DisplayType string
-	SetID       string
-	Before      []Asset
-	After       []Asset
+	Kind           string
+	Locale         string
+	DisplayType    string
+	LocalizationID string
+	SetID          string
+	Before         []Asset
+	After          []Asset
 }
 
 type Localization struct {
@@ -427,21 +428,6 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		grouped[key][change.Field] = change.After
 		touchedLocales[change.Locale] = true
 	}
-	if err := c.applyLicenseAgreementChanges(ctx, remote, changes); err != nil {
-		return err
-	}
-	if err := c.applyScreenshotChanges(ctx, changes); err != nil {
-		return err
-	}
-	if err := c.applyAppPreviewChanges(ctx, changes); err != nil {
-		return err
-	}
-	if err := c.applyAvailabilityChanges(ctx, remote, changes); err != nil {
-		return err
-	}
-	if err := c.applyPricingChanges(ctx, remote, changes); err != nil {
-		return err
-	}
 	globalGroups := make([]string, 0, len(global))
 	for group := range global {
 		globalGroups = append(globalGroups, group)
@@ -466,9 +452,6 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 			}
 			return fmt.Errorf("apply %s metadata after %d successful request(s): %w", group, index, err)
 		}
-	}
-	if err := c.applyAccessibilityChanges(ctx, remote, accessibilityChanges); err != nil {
-		return err
 	}
 	// Apple requires app-info and version localizations to contain the same
 	// locale set. Add an empty group when necessary so a touched locale is
@@ -511,12 +494,46 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		}
 		if resourceID == "" {
 			attributes["locale"] = locale
-			if err := c.createLocalization(ctx, resourceType, parentType, parentID, attributes); err != nil {
+			createdID, err := c.createLocalization(ctx, resourceType, parentType, parentID, attributes)
+			if err != nil {
 				return applyLocalizationError(locale, group, len(globalGroups)+index, err)
+			}
+			if createdID != "" {
+				if group == "version" {
+					loc.VersionLocalizationID = createdID
+				} else {
+					loc.AppInfoLocalizationID = createdID
+				}
+				remote.Localizations[locale] = loc
 			}
 		} else if err := c.patchResource(ctx, resourceType, resourceID, attributes); err != nil {
 			return applyLocalizationError(locale, group, len(globalGroups)+index, err)
 		}
+	}
+	if err := c.applyAccessibilityChanges(ctx, remote, accessibilityChanges); err != nil {
+		return err
+	}
+	if err := c.applyLicenseAgreementChanges(ctx, remote, changes); err != nil {
+		return err
+	}
+	for index := range changes {
+		if changes[index].AssetSet == nil {
+			continue
+		}
+		localization := remote.Localizations[changes[index].AssetSet.Locale]
+		changes[index].AssetSet.LocalizationID = localization.VersionLocalizationID
+	}
+	if err := c.applyScreenshotChanges(ctx, changes); err != nil {
+		return err
+	}
+	if err := c.applyAppPreviewChanges(ctx, changes); err != nil {
+		return err
+	}
+	if err := c.applyAvailabilityChanges(ctx, remote, changes); err != nil {
+		return err
+	}
+	if err := c.applyPricingChanges(ctx, remote, changes); err != nil {
+		return err
 	}
 	return nil
 }
@@ -602,12 +619,19 @@ func globalFieldGroup(field string) (string, map[string]string, bool) {
 	return "", nil, false
 }
 
-func (c *Client) createLocalization(ctx context.Context, resourceType, parentType, parentID string, attributes map[string]string) error {
+func (c *Client) createLocalization(ctx context.Context, resourceType, parentType, parentID string, attributes map[string]string) (string, error) {
 	body := map[string]any{"data": map[string]any{
 		"type": resourceType, "attributes": attributes,
 		"relationships": map[string]any{singular(parentType): map[string]any{"data": map[string]string{"type": parentType, "id": parentID}}},
 	}}
-	return c.doJSON(ctx, http.MethodPost, "/v1/"+resourceType, body, nil)
+	var response singleResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/"+resourceType, body, &response); err != nil {
+		return "", err
+	}
+	if response.Data.ID == "" {
+		return "", errors.New("create localization response has no resource ID")
+	}
+	return response.Data.ID, nil
 }
 
 func (c *Client) patchResource(ctx context.Context, resourceType, resourceID string, attributes any) error {
@@ -617,6 +641,12 @@ func (c *Client) patchResource(ctx context.Context, resourceType, resourceID str
 func (c *Client) patchResourceSection(ctx context.Context, resourceType, resourceID, section string, values any) error {
 	body := map[string]any{"data": map[string]any{"type": resourceType, "id": resourceID, section: values}}
 	return c.doJSON(ctx, http.MethodPatch, "/v1/"+resourceType+"/"+resourceID, body, nil)
+}
+
+func (c *Client) cleanupReservedResource(ctx context.Context, resourceType, resourceID string) error {
+	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	return c.doJSON(cleanupContext, http.MethodDelete, "/v1/"+resourceType+"/"+url.PathEscape(resourceID), nil, nil)
 }
 
 func sortedRemoteFields(fields map[string]string) []string {

@@ -4,15 +4,96 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/md5"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestApplyMetadataCreatesLocalizationBeforeUploadingFileAsset(t *testing.T) {
+	t.Parallel()
+	content := []byte("file-backed screenshot")
+	assetPath := filepath.Join(t.TempDir(), "01.png")
+	if err := os.WriteFile(assetPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := md5.Sum(content)
+	checksum := hex.EncodeToString(sum[:])
+	var calls []string
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/appInfoLocalizations":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("info-loc-new", "appInfoLocalizations", nil)})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/appStoreVersionLocalizations":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("version-loc-new", "appStoreVersionLocalizations", nil)})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/appScreenshotSets":
+			var body struct {
+				Data struct {
+					Relationships map[string]struct {
+						Data resourceIdentifier `json:"data"`
+					} `json:"relationships"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if got := body.Data.Relationships["appStoreVersionLocalization"].Data.ID; got != "version-loc-new" {
+				t.Errorf("screenshot set localization = %q", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("set-new", "appScreenshotSets", nil)})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/appScreenshots":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("shot-new", "appScreenshots", map[string]any{
+				"uploadOperations": []any{map[string]any{"method": "PUT", "url": server.URL + "/upload", "offset": 0, "length": len(content), "requestHeaders": []any{}}},
+			})})
+		case r.Method == http.MethodPut && r.URL.Path == "/upload":
+			uploaded, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(uploaded) != string(content) {
+				t.Errorf("uploaded content = %q", uploaded)
+			}
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appScreenshots/shot-new":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appScreenshotSets/set-new/relationships/appScreenshots":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	client.httpClient = server.Client()
+	remote := Metadata{AppInfoID: "info-1", VersionID: "version-1", Localizations: map[string]Localization{}}
+	changes := []Change{{AssetSet: &AssetSetChange{
+		Kind: "screenshots", Locale: "en-US", DisplayType: "APP_IPHONE_67",
+		After: []Asset{{FileName: "01.png", Path: assetPath, Size: int64(len(content)), Checksum: checksum}},
+	}}}
+	if err := client.ApplyMetadata(context.Background(), remote, []string{"en-US"}, changes); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"POST /v1/appInfoLocalizations", "POST /v1/appStoreVersionLocalizations",
+		"POST /v1/appScreenshotSets", "POST /v1/appScreenshots", "PUT /upload",
+		"PATCH /v1/appScreenshots/shot-new", "PATCH /v1/appScreenshotSets/set-new/relationships/appScreenshots",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("calls = %#v, want %#v", calls, want)
+	}
+}
 
 func TestMetadataLocalesAreSorted(t *testing.T) {
 	t.Parallel()
@@ -270,7 +351,12 @@ func TestApplyMetadataCreatesMatchingLocalizationsInSafeOrder(t *testing.T) {
 		if body.Data.Attributes["locale"] != "fr-FR" {
 			t.Errorf("locale = %q", body.Data.Attributes["locale"])
 		}
+		id := "info-loc-new"
+		if r.URL.Path == "/v1/appStoreVersionLocalizations" {
+			id = "version-loc-new"
+		}
 		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON(id, strings.TrimPrefix(r.URL.Path, "/v1/"), nil)})
 	}))
 	defer server.Close()
 	client := testClient(t, server.URL)
@@ -298,7 +384,12 @@ func TestApplyMetadataCreatesMissingCounterpartLocalization(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
+		id := "info-loc-new"
+		if r.URL.Path == "/v1/appStoreVersionLocalizations" {
+			id = "version-loc-new"
+		}
 		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON(id, strings.TrimPrefix(r.URL.Path, "/v1/"), nil)})
 	}))
 	defer server.Close()
 	client := testClient(t, server.URL)
@@ -324,6 +415,7 @@ func TestApplyMetadataRepairsLocaleWithoutValueChanges(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("version-loc-new", "appStoreVersionLocalizations", nil)})
 	}))
 	defer server.Close()
 	client := testClient(t, server.URL)
@@ -498,6 +590,7 @@ func TestApplyMetadataErrorIdentifiesPartialProgress(t *testing.T) {
 		requests++
 		if requests == 1 {
 			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"data":{"id":"info-loc-new","type":"appInfoLocalizations"}}`))
 			return
 		}
 		w.WriteHeader(http.StatusUnprocessableEntity)

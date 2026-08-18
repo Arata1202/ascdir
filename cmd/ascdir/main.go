@@ -122,7 +122,7 @@ func versionString() string {
 }
 
 func usage(writer io.Writer) {
-	fmt.Fprint(writer, `ascdir manages App Store Connect metadata as YAML and Markdown.
+	fmt.Fprint(writer, `ascdir manages App Store Connect metadata and product-page assets as files.
 
 Usage:
   ascdir init  --bundle-id ID --version VERSION [--platform IOS] [--locale en-US]

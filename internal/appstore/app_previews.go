@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"os"
 	"strings"
 )
+
+const maximumAppPreviewDownloadSize = 1 << 30
 
 func (c *Client) fetchAppPreviews(ctx context.Context, result *Metadata, download bool) error {
 	for locale, localization := range result.Localizations {
@@ -71,16 +74,20 @@ func (c *Client) applyAppPreviewChanges(ctx context.Context, changes []Change) e
 	return nil
 }
 
-func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) error {
+func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) (err error) {
 	setID := change.SetID
+	createdSet := false
 	if setID == "" {
 		if len(change.After) == 0 {
 			return nil
 		}
+		if change.LocalizationID == "" {
+			return fmt.Errorf("version localization ID is missing")
+		}
 		body := map[string]any{"data": map[string]any{
 			"type": "appPreviewSets", "attributes": map[string]string{"previewType": change.DisplayType},
 			"relationships": map[string]any{"appStoreVersionLocalization": map[string]any{"data": map[string]string{
-				"type": "appStoreVersionLocalizations", "id": change.After[0].Path,
+				"type": "appStoreVersionLocalizations", "id": change.LocalizationID,
 			}}},
 		}}
 		var response singleResponse
@@ -88,6 +95,10 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 			return err
 		}
 		setID = response.Data.ID
+		if setID == "" {
+			return errors.New("create app preview set: response has no resource ID")
+		}
+		createdSet = true
 	}
 	available := map[string][]Asset{}
 	for _, asset := range change.Before {
@@ -95,6 +106,23 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 		available[key] = append(available[key], asset)
 	}
 	orderedIDs := make([]string, 0, len(change.After))
+	var uploadedIDs []string
+	orderUpdated := false
+	defer func() {
+		if err == nil || orderUpdated {
+			return
+		}
+		for _, id := range uploadedIDs {
+			if cleanupErr := c.cleanupReservedResource(ctx, "appPreviews", id); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("clean up uploaded app preview %s: %w", id, cleanupErr))
+			}
+		}
+		if createdSet {
+			if cleanupErr := c.cleanupReservedResource(ctx, "appPreviewSets", setID); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("clean up app preview set %s: %w", setID, cleanupErr))
+			}
+		}
+	}()
 	kept := map[string]bool{}
 	for _, desired := range change.After {
 		key := desired.Checksum
@@ -120,6 +148,7 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 			return err
 		}
 		orderedIDs = append(orderedIDs, id)
+		uploadedIDs = append(uploadedIDs, id)
 	}
 	linkages := make([]map[string]string, 0, len(orderedIDs))
 	for _, id := range orderedIDs {
@@ -128,6 +157,7 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 	if err := c.doJSON(ctx, http.MethodPatch, "/v1/appPreviewSets/"+url.PathEscape(setID)+"/relationships/appPreviews", map[string]any{"data": linkages}, nil); err != nil {
 		return fmt.Errorf("update display order: %w", err)
 	}
+	orderUpdated = true
 	for _, existing := range change.Before {
 		if !kept[existing.ID] {
 			if err := c.doJSON(ctx, http.MethodDelete, "/v1/appPreviews/"+url.PathEscape(existing.ID), nil, nil); err != nil {
@@ -138,7 +168,7 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 	return nil
 }
 
-func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset) (string, error) {
+func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset) (_ string, err error) {
 	size := asset.Size
 	if size == 0 {
 		size = int64(len(asset.Content))
@@ -155,6 +185,18 @@ func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/appPreviews", body, &response); err != nil {
 		return "", fmt.Errorf("reserve %s: %w", asset.FileName, err)
 	}
+	if response.Data.ID == "" {
+		return "", fmt.Errorf("reserve %s: response has no resource ID", asset.FileName)
+	}
+	committed := false
+	defer func() {
+		if err == nil || committed || response.Data.ID == "" {
+			return
+		}
+		if cleanupErr := c.cleanupReservedResource(ctx, "appPreviews", response.Data.ID); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("clean up reserved app preview %s: %w", response.Data.ID, cleanupErr))
+		}
+	}()
 	operations, err := validatedUploadOperations(response.Data.Attributes["uploadOperations"], size)
 	if err != nil {
 		return "", fmt.Errorf("reserve %s: %w", asset.FileName, err)
@@ -179,6 +221,7 @@ func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset
 	if err := c.patchResource(ctx, "appPreviews", response.Data.ID, commit); err != nil {
 		return "", fmt.Errorf("commit %s: %w", asset.FileName, err)
 	}
+	committed = true
 	return response.Data.ID, nil
 }
 
@@ -206,7 +249,7 @@ func (c *Client) downloadAssetToFile(ctx context.Context, assetURL string) (_ st
 			_ = os.Remove(path)
 		}
 	}()
-	written, err := io.Copy(temporary, resp.Body)
+	written, err := copyWithLimit(temporary, resp.Body, maximumAppPreviewDownloadSize)
 	if err != nil {
 		return "", 0, err
 	}
@@ -214,4 +257,15 @@ func (c *Client) downloadAssetToFile(ctx context.Context, assetURL string) (_ st
 		return "", 0, err
 	}
 	return path, written, nil
+}
+
+func copyWithLimit(destination io.Writer, source io.Reader, maximum int64) (int64, error) {
+	written, err := io.Copy(destination, io.LimitReader(source, maximum+1))
+	if err != nil {
+		return 0, err
+	}
+	if written > maximum {
+		return 0, fmt.Errorf("asset exceeds %d bytes", maximum)
+	}
+	return written, nil
 }
