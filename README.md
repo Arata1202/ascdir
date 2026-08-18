@@ -1,6 +1,6 @@
 # ascdir
 
-`ascdir` manages App Store Connect metadata and product-page assets as reviewable YAML, Markdown, and media files. It lets teams review store content in Git, pull the current values and assets, validate them locally, and push only what changed.
+`ascdir` manages App Store Connect metadata and product-page assets as reviewable YAML, plain-text, and media files. Long-form text uses a `.md` extension for convenient GitHub review, but App Store product pages do not render Markdown syntax. It lets teams review store content in Git, pull the current values and assets, validate them locally, and push only what changed.
 
 ## Features
 
@@ -22,6 +22,19 @@ With Homebrew on macOS or Linux:
 brew install Arata1202/tap/ascdir
 ```
 
+With [aqua](https://aquaproj.github.io/):
+
+```sh
+aqua g -i Arata1202/ascdir
+aqua install
+```
+
+With [mise](https://mise.jdx.dev/) through its aqua backend:
+
+```sh
+mise use -g aqua:Arata1202/ascdir
+```
+
 Download the archive for your platform from [GitHub Releases](https://github.com/Arata1202/ascdir/releases/latest), extract it, and place `ascdir` (or `ascdir.exe` on Windows) on your `PATH`.
 
 On macOS or Linux, the checksum-verifying installer can do this automatically:
@@ -30,6 +43,24 @@ On macOS or Linux, the checksum-verifying installer can do this automatically:
 curl -fsSLO https://github.com/Arata1202/ascdir/releases/latest/download/install.sh
 sh install.sh
 rm install.sh
+```
+
+Set `ASCDIR_VERSION` to pin the installer in automation:
+
+```sh
+ASCDIR_VERSION=v1.1.1 sh install.sh
+```
+
+For example, in GitHub Actions:
+
+```yaml
+- name: Install ascdir
+  env:
+    ASCDIR_VERSION: v1.1.1
+  run: |
+    curl -fsSLO "https://github.com/Arata1202/ascdir/releases/download/${ASCDIR_VERSION}/install.sh"
+    sh install.sh
+    rm install.sh
 ```
 
 Verify the archive before extracting it:
@@ -54,6 +85,16 @@ Alternatively, install from source with Go 1.26.6 or later:
 ```sh
 go install github.com/Arata1202/ascdir/cmd/ascdir@latest
 ```
+
+To build the current source tree instead:
+
+```sh
+git clone https://github.com/Arata1202/ascdir.git
+cd ascdir
+make build
+```
+
+Release binaries support macOS, Linux, and Windows on AMD64 and ARM64. The installer supports macOS and Linux; use Homebrew, aqua, mise, `go install`, or a release archive on other systems.
 
 ## Authentication
 
@@ -93,9 +134,24 @@ ascdir init \
   --version 1.2.0
 ```
 
-This creates `ascdir.yaml` with short metadata values and downloads long-form content under `metadata/`.
+This creates `ascdir.yaml` with short metadata values and downloads long-form content under `metadata/`. All configured paths are relative to the directory containing `ascdir.yaml`. A project that also opts into asset management commonly has this layout:
 
-Edit the YAML or Markdown files, validate them, and preview the remote changes:
+```text
+project/
+  ascdir.yaml
+  metadata/
+    en-US/
+      description.md
+      promotional_text.md
+      whats_new.md
+  assets/
+    screenshots/
+    app-previews/
+```
+
+`privacy_policy.md` is generated only for `TV_OS`. A custom `license_agreement.md` is present only when the project manages a custom EULA.
+
+Edit the YAML or long-form text files, validate them, and preview the remote changes:
 
 ```sh
 ascdir check
@@ -177,10 +233,10 @@ localizations:
       privacy_policy_url: https://example.com/privacy # Public HTTP(S) privacy policy
       privacy_choices_url: "" # Optional public HTTP(S) privacy choices page
     files:
-      description: metadata/en-US/description.md # Markdown file containing the long app description
-      promotional_text: metadata/en-US/promotional_text.md # Markdown file containing promotional text
-      whats_new: metadata/en-US/whats_new.md # Markdown file containing release notes
-      privacy_policy_text: metadata/en-US/privacy_policy.md # Markdown file containing the tvOS privacy policy
+      description: metadata/en-US/description.md # Required plain-text product description; Markdown is not rendered
+      promotional_text: metadata/en-US/promotional_text.md # Optional plain-text promotion, up to 170 characters
+      whats_new: metadata/en-US/whats_new.md # Plain-text release notes; required for app updates
+      privacy_policy_text: metadata/en-US/privacy_policy.md # Required plain-text tvOS privacy policy; TV_OS only
 ```
 
 Find valid price-point IDs without changing App Store state:
@@ -189,7 +245,7 @@ Find valid price-point IDs without changing App Store state:
 ascdir price-points --territory USA
 ```
 
-Short, single-line values live under `values`, where the key and generated inline comment describe the expected input. Long-form values live in files referenced under `files`. Paths are relative to the directory containing `ascdir.yaml`.
+Short, single-line values live under `values`, where the key and generated inline comment describe the expected input. Long-form values live in files referenced under `files`. The `.md` extension makes them convenient to review on GitHub; ascdir sends their contents as plain text, so Markdown and HTML formatting are not rendered by the App Store. Paths are relative to the directory containing `ascdir.yaml`.
 
 Remove a key to leave that field unmanaged. An explicitly empty value remains managed and represents a request to clear the remote field; `push` still requires `--allow-empty` when the remote value is non-empty.
 
@@ -227,6 +283,8 @@ Version-level localization fields:
 - Description and keywords
 - Promotional text and what's new text
 - Support URL and marketing URL
+
+See [Text metadata](docs/metadata.md) for the purpose, requirement, and editing lifecycle of every generated long-form file. Complex managed resources have dedicated guides for [screenshots](docs/screenshots.md), [App Previews](docs/app-previews.md), [age ratings](docs/age-rating.md), [accessibility](docs/accessibility.md), [custom license agreements](docs/license-agreement.md), [availability](docs/availability.md), and [pricing](docs/pricing.md).
 
 When a configured locale does not exist remotely, `push` creates both the app-level and version-level localization resources in the order required by App Store Connect.
 
@@ -289,6 +347,10 @@ Prints shell completion for Bash, Zsh, Fish, or PowerShell. For example, enable 
 ```sh
 source <(ascdir completion zsh)
 ```
+
+## Troubleshooting
+
+See [Troubleshooting](docs/troubleshooting.md) for configuration discovery, authentication, editable-version restrictions, confirmation flags, and recovery after a partially applied push.
 
 ## Scope
 
