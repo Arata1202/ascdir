@@ -17,12 +17,15 @@ import (
 )
 
 func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) {
-	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Localizations: map[string]appstore.Localization{}}
+	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Accessibility: map[string]appstore.AccessibilityDeclaration{}, Localizations: map[string]appstore.Localization{}}
 	for field, value := range cfg.Categories.Map() {
 		result.Values[field] = value
 	}
 	for field, value := range cfg.AgeRating.Map() {
 		result.Values[field] = value
+	}
+	for deviceFamily, declaration := range cfg.Accessibility {
+		result.Accessibility[deviceFamily] = appstore.AccessibilityDeclaration{Values: declaration.Map()}
 	}
 	base := filepath.Dir(filepath.Clean(configPath))
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
@@ -110,6 +113,17 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 			if pointer != nil {
 				updated.AgeRating.SetManaged(field, remote.Values[field])
 			}
+		}
+		for deviceFamily, declaration := range cfg.Accessibility {
+			for field, pointer := range declaration.Pointers() {
+				if pointer != nil {
+					declaration.SetManaged(field, remote.Accessibility[deviceFamily].Values[field])
+				}
+			}
+			if updated.Accessibility == nil {
+				updated.Accessibility = map[string]config.AccessibilityValues{}
+			}
+			updated.Accessibility[deviceFamily] = declaration
 		}
 		updated.Localizations = make(map[string]config.Localization, len(cfg.Localizations))
 		for locale, localization := range cfg.Localizations {
@@ -244,6 +258,24 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 			changes = append(changes, appstore.Change{Field: field, Before: remote.Values[field], After: desired.Values[field]})
 		}
 	}
+	deviceFamilies := make([]string, 0, len(desired.Accessibility))
+	for deviceFamily := range desired.Accessibility {
+		deviceFamilies = append(deviceFamilies, deviceFamily)
+	}
+	sort.Strings(deviceFamilies)
+	for _, deviceFamily := range deviceFamilies {
+		fields := make([]string, 0, len(desired.Accessibility[deviceFamily].Values))
+		for field := range desired.Accessibility[deviceFamily].Values {
+			fields = append(fields, field)
+		}
+		sort.Strings(fields)
+		for _, field := range fields {
+			before, after := remote.Accessibility[deviceFamily].Values[field], desired.Accessibility[deviceFamily].Values[field]
+			if before != after {
+				changes = append(changes, appstore.Change{DeviceFamily: deviceFamily, Field: field, Before: before, After: after})
+			}
+		}
+	}
 	locales := make([]string, 0, len(desired.Localizations))
 	for locale := range desired.Localizations {
 		locales = append(locales, locale)
@@ -267,7 +299,7 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 }
 
 func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
-	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
+	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field := range cfg.Metadata.Map() {
 		selected.Values[field] = source.Values[field]
 	}
@@ -276,6 +308,13 @@ func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 	}
 	for field := range cfg.AgeRating.Map() {
 		selected.Values[field] = source.Values[field]
+	}
+	for deviceFamily, declaration := range cfg.Accessibility {
+		values := map[string]string{}
+		for field := range declaration.Map() {
+			values[field] = source.Accessibility[deviceFamily].Values[field]
+		}
+		selected.Accessibility[deviceFamily] = appstore.AccessibilityDeclaration{ID: source.Accessibility[deviceFamily].ID, Values: values}
 	}
 	for locale, localization := range cfg.Localizations {
 		values := map[string]string{}
@@ -305,6 +344,12 @@ func ClearingChanges(changes []appstore.Change) []appstore.Change {
 func PrintChanges(w io.Writer, changes []appstore.Change) {
 	for _, change := range changes {
 		if change.Locale == "" {
+			if change.DeviceFamily != "" {
+				fmt.Fprintf(w, "accessibility.%s.%s\n", change.DeviceFamily, change.Field)
+				fmt.Fprintf(w, "- %s\n", summarize(change.Before))
+				fmt.Fprintf(w, "+ %s\n", summarize(change.After))
+				continue
+			}
 			prefix := "metadata"
 			if isCategoryField(change.Field) {
 				prefix = "categories"

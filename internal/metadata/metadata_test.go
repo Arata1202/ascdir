@@ -155,6 +155,28 @@ func TestDiffAndPrintGlobalMetadata(t *testing.T) {
 	}
 }
 
+func TestAccessibilityDiffSelectAndPrintUseTypedStructure(t *testing.T) {
+	t.Parallel()
+	voiceover, published := true, false
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	cfg.Accessibility = map[string]config.AccessibilityValues{"IPHONE": {SupportsVoiceover: &voiceover, Published: &published}}
+	desired := appstore.Metadata{Accessibility: map[string]appstore.AccessibilityDeclaration{"IPHONE": {Values: map[string]string{"supports_voiceover": "true", "published": "false"}}}}
+	remote := appstore.Metadata{Accessibility: map[string]appstore.AccessibilityDeclaration{"IPHONE": {ID: "declaration-1", Values: map[string]string{"supports_voiceover": "false", "published": "false"}}}}
+	changes := Diff(desired, remote)
+	if len(changes) != 1 || changes[0].DeviceFamily != "IPHONE" || changes[0].Field != "supports_voiceover" {
+		t.Fatalf("changes = %#v", changes)
+	}
+	selected := Select(cfg, remote)
+	if selected.Accessibility["IPHONE"].ID != "declaration-1" || selected.Accessibility["IPHONE"].Values["supports_voiceover"] != "false" {
+		t.Fatalf("selected = %#v", selected.Accessibility)
+	}
+	var output bytes.Buffer
+	PrintChanges(&output, changes)
+	if !strings.Contains(output.String(), "accessibility.IPHONE.supports_voiceover") {
+		t.Fatalf("output = %q", output.String())
+	}
+}
+
 func TestClearingChanges(t *testing.T) {
 	t.Parallel()
 	changes := []appstore.Change{

@@ -140,6 +140,11 @@ age_rating:
   kids_age_band: "" # Made for Kids: FIVE_AND_UNDER, SIX_TO_EIGHT, NINE_TO_ELEVEN, or empty
   violence_cartoon_or_fantasy: NONE # Content frequency declaration
   developer_age_rating_info_url: "" # Optional public HTTP(S) age rating information page
+accessibility:
+  IPHONE:
+    published: false # Publishing a declaration cannot be undone
+    supports_voiceover: true # The app supports VoiceOver
+    supports_larger_text: true # The app supports larger text
 localizations:
   en-US:
     values:
@@ -177,6 +182,7 @@ Non-localized fields:
 - Primary and secondary categories
 - Games and Stickers subcategories
 - Age rating declaration, including Made for Kids
+- Accessibility Nutrition Labels for each device family
 
 App-level localization fields:
 
@@ -233,6 +239,8 @@ ascdir push --allow-irreversible
 ```
 
 See [Age rating configuration](docs/age-rating.md) for every supported declaration and enum value.
+
+Publishing an Accessibility Nutrition Label also requires `--allow-irreversible`. See [Accessibility declaration configuration](docs/accessibility.md).
 
 Apple only permits most version metadata to change while the version is in an editable state. API errors are returned without hiding Apple's error code or detail.
 

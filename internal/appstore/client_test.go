@@ -19,6 +19,7 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	var mutations []map[string]any
 	var mutationPaths []string
 	ageRatingRequests := 0
+	accessibilityRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 			t.Error("missing bearer token")
@@ -29,6 +30,9 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 			writeData(t, w, []any{resourceJSON("app-1", "apps", map[string]any{"bundleId": "com.example.app", "accessibilityUrl": "https://example.com/accessibility", "contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT"})})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/app-1/appInfos":
 			writeData(t, w, []any{resourceJSON("info-1", "appInfos", nil)})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/app-1/accessibilityDeclarations":
+			accessibilityRequests++
+			writeData(t, w, []any{resourceJSON("accessibility-1", "accessibilityDeclarations", map[string]any{"deviceFamily": "IPHONE", "state": "DRAFT", "supportsVoiceover": true})})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/appInfos/info-1":
 			if err := json.NewEncoder(w).Encode(map[string]any{"data": resource{ID: "info-1", Type: "appInfos", Relationships: map[string]relationship{
 				"primaryCategory":   {Data: &resourceIdentifier{Type: "appCategories", ID: "PRODUCTIVITY"}},
@@ -62,7 +66,7 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	defer server.Close()
 
 	client := testClient(t, server.URL)
-	remote, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0", FetchOptions{AgeRating: true})
+	remote, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0", FetchOptions{AgeRating: true, Accessibility: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +91,12 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	}
 	if withoutAgeRating.AgeRatingID != "" || ageRatingRequests != 1 {
 		t.Fatalf("optional age rating request was not skipped: ID=%q requests=%d", withoutAgeRating.AgeRatingID, ageRatingRequests)
+	}
+	if len(withoutAgeRating.Accessibility) != 0 || accessibilityRequests != 1 {
+		t.Fatalf("optional accessibility request was not skipped: declarations=%#v requests=%d", withoutAgeRating.Accessibility, accessibilityRequests)
+	}
+	if remote.Accessibility["IPHONE"].ID != "accessibility-1" || remote.Accessibility["IPHONE"].Values["supports_voiceover"] != "true" || remote.Accessibility["IPHONE"].Values["published"] != "false" {
+		t.Fatalf("accessibility declarations = %#v", remote.Accessibility)
 	}
 	changes := []Change{
 		{Field: "copyright", Before: "2025 Example, Inc.", After: "2026 Example, Inc."},
@@ -418,6 +428,58 @@ func TestAgeRatingAPIFieldRegistryIsComplete(t *testing.T) {
 		if _, exists := ageRatingFields[field]; !exists {
 			t.Fatalf("boolean field %q is missing from API field registry", field)
 		}
+	}
+}
+
+func TestApplyMetadataCreatesAndPublishesAccessibilityDeclaration(t *testing.T) {
+	t.Parallel()
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/accessibilityDeclarations":
+			var body struct {
+				Data struct {
+					Attributes map[string]any `json:"attributes"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Data.Attributes["deviceFamily"] != "IPHONE" || body.Data.Attributes["supportsVoiceover"] != true {
+				t.Fatalf("attributes = %#v", body.Data.Attributes)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("declaration-1", "accessibilityDeclarations", nil)})
+		case r.Method == http.MethodPatch && r.URL.Path == "/v1/accessibilityDeclarations/declaration-1":
+			var body struct {
+				Data struct {
+					Attributes map[string]any `json:"attributes"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Data.Attributes["publish"] != true {
+				t.Fatalf("publish attributes = %#v", body.Data.Attributes)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	remote := Metadata{AppID: "app-1", Accessibility: map[string]AccessibilityDeclaration{}}
+	err := client.ApplyMetadata(context.Background(), remote, nil, []Change{
+		{DeviceFamily: "IPHONE", Field: "supports_voiceover", After: "true"},
+		{DeviceFamily: "IPHONE", Field: "published", After: "true"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("requests = %#v", requests)
 	}
 }
 

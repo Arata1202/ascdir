@@ -267,7 +267,7 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 	if err != nil {
 		return err
 	}
-	remote, err := client.FetchMetadata(ctx, "", normalizedBundleID, normalizedPlatform, normalizedVersion, appstore.FetchOptions{AgeRating: true})
+	remote, err := client.FetchMetadata(ctx, "", normalizedBundleID, normalizedPlatform, normalizedVersion, appstore.FetchOptions{AgeRating: true, Accessibility: true})
 	if err != nil {
 		return err
 	}
@@ -277,6 +277,16 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 	}
 	cfg := config.New(remote.AppID, normalizedBundleID, normalizedPlatform, normalizedVersion, locales)
 	cfg.AgeRating.ManageAll(remote.Values)
+	for deviceFamily, remoteDeclaration := range remote.Accessibility {
+		if cfg.Accessibility == nil {
+			cfg.Accessibility = map[string]config.AccessibilityValues{}
+		}
+		declaration := config.AccessibilityValues{}
+		for field, value := range remoteDeclaration.Values {
+			declaration.SetManaged(field, value)
+		}
+		cfg.Accessibility[deviceFamily] = declaration
+	}
 	if err := metadata.WriteLocalNew(cfg, *configPath, remote); err != nil {
 		return err
 	}
@@ -382,9 +392,14 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	}
 	if !*allowIrreversible {
 		for _, change := range changes {
-			if change.Locale == "" && change.Field == "kids_age_band" {
-				return errors.New("changing age_rating.kids_age_band may be irreversible after App Review; review with --dry-run and rerun with --allow-irreversible")
+			if change.Locale == "" && (change.Field == "kids_age_band" || change.DeviceFamily != "" && change.Field == "published" && change.After == "true") {
+				return errors.New("the change may be irreversible after App Review or publication; review with --dry-run and rerun with --allow-irreversible")
 			}
+		}
+	}
+	for _, change := range changes {
+		if change.DeviceFamily != "" && change.Field == "published" && change.Before == "true" && change.After == "false" {
+			return fmt.Errorf("accessibility.%s.published cannot be unpublished through App Store Connect", change.DeviceFamily)
 		}
 	}
 	if err := client.ApplyMetadata(ctx, remote, desired.Locales(), changes); err != nil {
@@ -434,7 +449,7 @@ func requireNoArgs(fs *flag.FlagSet) error {
 }
 
 func fetchOptions(cfg config.Config) appstore.FetchOptions {
-	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0}
+	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0}
 }
 
 func newClient(stderr io.Writer) (*appstore.Client, error) {
