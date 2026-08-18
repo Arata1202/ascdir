@@ -39,6 +39,7 @@ type Metadata struct {
 	AppInfoID     string
 	VersionID     string
 	AgeRatingID   string
+	Accessibility map[string]AccessibilityDeclaration
 	Values        map[string]string
 	Localizations map[string]Localization
 }
@@ -47,13 +48,19 @@ type Metadata struct {
 // configuration manages. This keeps existing projects usable with least-
 // privilege API keys that cannot access newly supported resource families.
 type FetchOptions struct {
-	AgeRating bool
+	AgeRating     bool
+	Accessibility bool
 }
 
 type Localization struct {
 	AppInfoLocalizationID string
 	VersionLocalizationID string
 	Values                map[string]string
+}
+
+type AccessibilityDeclaration struct {
+	ID     string
+	Values map[string]string
 }
 
 type resource struct {
@@ -130,8 +137,29 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	if err != nil {
 		return Metadata{}, err
 	}
-	result := Metadata{AppID: app.ID, Values: map[string]string{}, Localizations: map[string]Localization{}}
+	result := Metadata{AppID: app.ID, Values: map[string]string{}, Accessibility: map[string]AccessibilityDeclaration{}, Localizations: map[string]Localization{}}
 	copyAttributes(result.Values, app.Attributes, appFields)
+	if options.Accessibility {
+		accessibilityDeclarations, err := c.list(ctx, fmt.Sprintf("/v1/apps/%s/accessibilityDeclarations?limit=200", result.AppID))
+		if err != nil {
+			return Metadata{}, err
+		}
+		for _, declaration := range accessibilityDeclarations {
+			deviceFamily := stringAttribute(declaration, "deviceFamily")
+			if deviceFamily == "" {
+				continue
+			}
+			values := map[string]string{}
+			for local, remote := range accessibilityFields {
+				if value, ok := declaration.Attributes[remote].(bool); ok {
+					values[local] = strconv.FormatBool(value)
+				}
+			}
+			state := stringAttribute(declaration, "state")
+			values["published"] = strconv.FormatBool(state == "PUBLISHED" || state == "REPLACED")
+			result.Accessibility[deviceFamily] = AccessibilityDeclaration{ID: declaration.ID, Values: values}
+		}
+	}
 
 	infos, err := c.list(ctx, fmt.Sprintf("/v1/apps/%s/appInfos?fields%%5BappInfos%%5D=state&limit=10", result.AppID))
 	if err != nil {
@@ -272,12 +300,21 @@ var versionFields = map[string]string{
 func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []string, changes []Change) error {
 	grouped := map[string]map[string]string{}
 	global := map[string]map[string]any{}
+	accessibilityChanges := map[string]map[string]string{}
 	touchedLocales := map[string]bool{}
 	for _, locale := range locales {
 		touchedLocales[locale] = true
 	}
 	for _, change := range changes {
 		if change.Locale == "" {
+			if change.DeviceFamily != "" {
+				deviceFamily, field := change.DeviceFamily, change.Field
+				if accessibilityChanges[deviceFamily] == nil {
+					accessibilityChanges[deviceFamily] = map[string]string{}
+				}
+				accessibilityChanges[deviceFamily][field] = change.After
+				continue
+			}
 			group, fields, ok := globalFieldGroup(change.Field)
 			if !ok {
 				return fmt.Errorf("unsupported metadata field %q", change.Field)
@@ -343,6 +380,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 			}
 			return fmt.Errorf("apply %s metadata after %d successful request(s): %w", group, index, err)
 		}
+	}
+	if err := c.applyAccessibilityChanges(ctx, remote, accessibilityChanges); err != nil {
+		return err
 	}
 	// Apple requires app-info and version localizations to contain the same
 	// locale set. Add an empty group when necessary so a touched locale is
@@ -442,10 +482,11 @@ func (c *Client) resolveApp(ctx context.Context, appID, bundleID string) (resour
 }
 
 type Change struct {
-	Locale string
-	Field  string
-	Before string
-	After  string
+	Locale       string
+	DeviceFamily string
+	Field        string
+	Before       string
+	After        string
 }
 
 func fieldGroup(field string) (string, bool) {

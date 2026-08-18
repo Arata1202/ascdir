@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -114,6 +115,14 @@ func TestFetchOptionsFollowManagedSections(t *testing.T) {
 	cfg.AgeRating.Advertising = &value
 	if !fetchOptions(cfg).AgeRating {
 		t.Fatal("managed age rating was not requested")
+	}
+	if fetchOptions(cfg).Accessibility {
+		t.Fatal("unmanaged accessibility declarations were requested")
+	}
+	accessible := true
+	cfg.Accessibility = map[string]config.AccessibilityValues{"IPHONE": {SupportsVoiceover: &accessible}}
+	if !fetchOptions(cfg).Accessibility {
+		t.Fatal("managed accessibility declarations were not requested")
 	}
 }
 
@@ -417,6 +426,63 @@ func TestRunPushRequiresExplicitPermissionForMadeForKids(t *testing.T) {
 	if applyCalls != 1 {
 		t.Fatalf("apply calls = %d", applyCalls)
 	}
+}
+
+func TestRunPushProtectsAccessibilityPublicationState(t *testing.T) {
+	t.Parallel()
+	makeConfig := func(t *testing.T, published bool) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "ascdir.yaml")
+		cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+		cfg.Metadata, cfg.Categories = config.MetadataValues{}, config.CategoryValues{}
+		cfg.Accessibility = map[string]config.AccessibilityValues{"IPHONE": {Published: &published}}
+		localization := cfg.Localizations["en-US"]
+		name := "Example"
+		localization.Values, localization.Files = config.LocaleValues{Name: &name}, config.LocaleFiles{}
+		cfg.Localizations["en-US"] = localization
+		if err := config.Save(path, cfg); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	remoteWithPublished := func(published bool) appstore.Metadata {
+		return appstore.Metadata{
+			AppID: "app-1", AppInfoID: "info-1", VersionID: "version-1",
+			Accessibility: map[string]appstore.AccessibilityDeclaration{"IPHONE": {ID: "declaration-1", Values: map[string]string{"published": fmt.Sprintf("%t", published)}}},
+			Localizations: map[string]appstore.Localization{"en-US": {AppInfoLocalizationID: "info-loc-1", VersionLocalizationID: "version-loc-1", Values: map[string]string{"name": "Example"}}},
+		}
+	}
+	t.Run("publish requires confirmation", func(t *testing.T) {
+		path, remote, applyCalls := makeConfig(t, true), remoteWithPublished(false), 0
+		client := mockStoreClient{
+			fetchMetadata: func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error) {
+				return remote, nil
+			},
+			applyMetadata: func(context.Context, appstore.Metadata, []string, []appstore.Change) error { applyCalls++; return nil },
+		}
+		environment, _, _ := testEnvironment(client)
+		args := []string{"push", "--config", path}
+		if err := runWithEnvironment(context.Background(), args, environment); err == nil || !strings.Contains(err.Error(), "--allow-irreversible") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := runWithEnvironment(context.Background(), append(args, "--allow-irreversible"), environment); err != nil {
+			t.Fatal(err)
+		}
+		if applyCalls != 1 {
+			t.Fatalf("apply calls = %d", applyCalls)
+		}
+	})
+	t.Run("published declaration cannot be reverted", func(t *testing.T) {
+		path, remote := makeConfig(t, false), remoteWithPublished(true)
+		client := mockStoreClient{fetchMetadata: func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error) {
+			return remote, nil
+		}}
+		environment, _, _ := testEnvironment(client)
+		err := runWithEnvironment(context.Background(), []string{"push", "--config", path}, environment)
+		if err == nil || !strings.Contains(err.Error(), "cannot be unpublished") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 func TestRunInitReportsUnexpectedStatError(t *testing.T) {

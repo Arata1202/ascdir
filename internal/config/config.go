@@ -17,12 +17,13 @@ import (
 const CurrentVersion = "2"
 
 type Config struct {
-	Version       string                  `yaml:"version"`
-	App           App                     `yaml:"app"`
-	Metadata      MetadataValues          `yaml:"metadata,omitempty"`
-	Categories    CategoryValues          `yaml:"categories,omitempty"`
-	AgeRating     AgeRatingValues         `yaml:"age_rating,omitempty"`
-	Localizations map[string]Localization `yaml:"localizations"`
+	Version       string                         `yaml:"version"`
+	App           App                            `yaml:"app"`
+	Metadata      MetadataValues                 `yaml:"metadata,omitempty"`
+	Categories    CategoryValues                 `yaml:"categories,omitempty"`
+	AgeRating     AgeRatingValues                `yaml:"age_rating,omitempty"`
+	Accessibility map[string]AccessibilityValues `yaml:"accessibility,omitempty"`
+	Localizations map[string]Localization        `yaml:"localizations"`
 }
 
 // AgeRatingValues mirrors Apple's age rating declaration. Pointer values make
@@ -343,6 +344,12 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 	if err := updateScalarMapping(mappingValue(root, "age_rating"), "age_rating", cfg.AgeRating.Pointers()); err != nil {
 		return nil, err
 	}
+	accessibility := mappingValue(root, "accessibility")
+	for _, deviceFamily := range SortedAccessibilityDeviceFamilies(cfg.Accessibility) {
+		if err := updateScalarMapping(mappingValue(accessibility, deviceFamily), "accessibility."+deviceFamily, cfg.Accessibility[deviceFamily].Pointers()); err != nil {
+			return nil, err
+		}
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
@@ -420,6 +427,12 @@ func addSchemaComments(document *yaml.Node) {
 		"secondary_subcategory_two": "Optional second secondary Games or Stickers subcategory ID",
 	})
 	addMappingComments(mappingValue(root, "age_rating"), ageRatingComments())
+	accessibility := mappingValue(root, "accessibility")
+	if accessibility != nil {
+		for index := 0; index+1 < len(accessibility.Content); index += 2 {
+			addMappingComments(accessibility.Content[index+1], accessibilityComments())
+		}
+	}
 	for index := 0; index+1 < len(localizations.Content); index += 2 {
 		locale := localizations.Content[index+1]
 		addMappingComments(mappingValue(locale, "values"), valueComments)
@@ -463,6 +476,15 @@ func (c Config) Validate() error {
 	}
 	if len(c.Localizations) == 0 {
 		return errors.New("at least one localization is required")
+	}
+	validDeviceFamilies := map[string]bool{"IPHONE": true, "IPAD": true, "APPLE_TV": true, "APPLE_WATCH": true, "MAC": true, "VISION": true}
+	for deviceFamily, declaration := range c.Accessibility {
+		if !validDeviceFamilies[deviceFamily] {
+			return fmt.Errorf("unsupported accessibility device family %q", deviceFamily)
+		}
+		if len(declaration.Map()) == 0 {
+			return fmt.Errorf("accessibility.%s must manage at least one field", deviceFamily)
+		}
 	}
 	seen := map[string]string{}
 	for _, locale := range SortedLocales(c.Localizations) {

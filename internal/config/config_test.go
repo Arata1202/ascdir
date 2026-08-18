@@ -169,6 +169,34 @@ func TestAgeRatingFieldRegistryIsComplete(t *testing.T) {
 	}
 }
 
+func TestAccessibilityValuesRoundTrip(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	cfg := New("123", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	value := true
+	cfg.Accessibility = map[string]AccessibilityValues{"IPHONE": {SupportsVoiceover: &value, Published: &value}}
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Accessibility["IPHONE"].Map()["supports_voiceover"] != "true" {
+		t.Fatalf("accessibility = %#v", loaded.Accessibility)
+	}
+	declaration := loaded.Accessibility["IPHONE"]
+	declaration.SetManaged("published", "false")
+	loaded.Accessibility["IPHONE"] = declaration
+	updated, err := EncodeUpdatedValues(path, loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(updated), `published: "false"`) || !strings.Contains(string(updated), "published: false") {
+		t.Fatalf("updated YAML =\n%s", updated)
+	}
+}
+
 func TestEncodeUpdatedValuesPreservesCommentsAndKeyOrder(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ascdir.yaml")
