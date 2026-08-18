@@ -402,7 +402,7 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	}
 	if !*allowIrreversible {
 		for _, change := range changes {
-			if change.Locale == "" && (change.Field == "kids_age_band" || change.DeviceFamily != "" && change.Field == "published" && change.After == "true") {
+			if change.Locale == "" && (change.Field == "kids_age_band" || strings.HasSuffix(change.Field, ".pre_order_enabled") && change.After == "true" || change.DeviceFamily != "" && change.Field == "published" && change.After == "true") {
 				return errors.New("the change may be irreversible after App Review or publication; review with --dry-run and rerun with --allow-irreversible")
 			}
 		}
@@ -459,7 +459,7 @@ func requireNoArgs(fs *flag.FlagSet) error {
 }
 
 func fetchOptions(cfg config.Config) appstore.FetchOptions {
-	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != ""}
+	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != "", Availability: cfg.Availability != nil}
 }
 
 func newClient(stderr io.Writer) (*appstore.Client, error) {

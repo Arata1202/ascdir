@@ -153,6 +153,13 @@ assets:
   app_previews: assets/app-previews # <locale>/<preview-type>/<ordered video files>
   preview_frame_times:
     en-US/IPHONE_67/01-demo.mp4: "00:00:05"
+availability:
+  available_in_new_territories: false # Used only if App Store Connect has not created availability yet
+  territories:
+    JPN:
+      available: true
+      release_date: "2026-09-01" # Optional YYYY-MM-DD release or preorder date
+      pre_order_enabled: false
 localizations:
   en-US:
     values:
@@ -194,6 +201,7 @@ Non-localized fields:
 - Custom end-user license agreement text and territories
 - App screenshots, including locale, display type, and order
 - App Preview videos, display order, and optional poster-frame timecodes
+- Territory availability, release dates, and preorder settings
 
 App-level localization fields:
 

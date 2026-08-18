@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Arata1202/ascdir/internal/appstore"
@@ -23,6 +24,11 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 	}
 	for field, value := range cfg.AgeRating.Map() {
 		result.Values[field] = value
+	}
+	if cfg.Availability != nil {
+		for field, value := range cfg.Availability.Map() {
+			result.Values[field] = value
+		}
 	}
 	for deviceFamily, declaration := range cfg.Accessibility {
 		result.Accessibility[deviceFamily] = appstore.AccessibilityDeclaration{Values: declaration.Map()}
@@ -250,6 +256,11 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 				updated.AgeRating.SetManaged(field, remote.Values[field])
 			}
 		}
+		if cfg.Availability != nil {
+			for field := range cfg.Availability.Map() {
+				updated.Availability.SetManaged(field, remote.Values[field])
+			}
+		}
 		for deviceFamily, declaration := range cfg.Accessibility {
 			for field, pointer := range declaration.Pointers() {
 				if pointer != nil {
@@ -470,7 +481,7 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 }
 
 func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
-	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]appstore.Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
+	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, AvailabilityID: source.AvailabilityID, TerritoryAvailabilityIDs: source.TerritoryAvailabilityIDs, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]appstore.Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field := range cfg.Metadata.Map() {
 		selected.Values[field] = source.Values[field]
 	}
@@ -484,6 +495,11 @@ func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 		selected.LicenseAgreementID = source.LicenseAgreementID
 		selected.Values["license_agreement_text"] = source.Values["license_agreement_text"]
 		selected.Values["license_agreement_territories"] = source.Values["license_agreement_territories"]
+	}
+	if cfg.Availability != nil {
+		for field := range cfg.Availability.Map() {
+			selected.Values[field] = source.Values[field]
+		}
 	}
 	for deviceFamily, declaration := range cfg.Accessibility {
 		values := map[string]string{}
@@ -545,6 +561,8 @@ func PrintChanges(w io.Writer, changes []appstore.Change) {
 				prefix = "categories"
 			} else if isAgeRatingField(change.Field) {
 				prefix = "age_rating"
+			} else if strings.HasPrefix(change.Field, "availability.") {
+				prefix = "availability"
 			}
 			fmt.Fprintf(w, "%s.%s\n", prefix, change.Field)
 		} else {
@@ -592,6 +610,13 @@ func Validate(values appstore.Metadata) []string {
 		for previewType, assets := range sets {
 			if len(assets) > 3 {
 				problems = append(problems, fmt.Sprintf("assets.app_previews.%s.%s has %d previews; maximum is 3", locale, previewType, len(assets)))
+			}
+		}
+	}
+	for field, value := range values.Values {
+		if strings.HasPrefix(field, "availability.territories.") && strings.HasSuffix(field, ".release_date") && value != "" {
+			if _, err := time.Parse("2006-01-02", value); err != nil {
+				problems = append(problems, fmt.Sprintf("%s must use YYYY-MM-DD", field))
 			}
 		}
 	}
