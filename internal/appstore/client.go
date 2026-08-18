@@ -63,6 +63,7 @@ type FetchOptions struct {
 	DownloadAssets   bool
 	AppPreviews      bool
 	Availability     bool
+	Pricing          bool
 }
 
 type Asset struct {
@@ -83,7 +84,6 @@ type AssetSetChange struct {
 	SetID       string
 	Before      []Asset
 	After       []Asset
-	Pricing     bool
 }
 
 type Localization struct {
