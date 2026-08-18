@@ -18,6 +18,9 @@ import (
 
 func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) {
 	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Localizations: map[string]appstore.Localization{}}
+	for field, value := range cfg.Categories.Map() {
+		result.Values[field] = value
+	}
 	base := filepath.Dir(filepath.Clean(configPath))
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
@@ -93,6 +96,11 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		for field, pointer := range cfg.Metadata.Pointers() {
 			if pointer != nil {
 				updated.Metadata.SetManaged(field, remote.Values[field])
+			}
+		}
+		for field, pointer := range cfg.Categories.Pointers() {
+			if pointer != nil {
+				updated.Categories.SetManaged(field, remote.Values[field])
 			}
 		}
 		updated.Localizations = make(map[string]config.Localization, len(cfg.Localizations))
@@ -255,6 +263,9 @@ func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 	for field := range cfg.Metadata.Map() {
 		selected.Values[field] = source.Values[field]
 	}
+	for field := range cfg.Categories.Map() {
+		selected.Values[field] = source.Values[field]
+	}
 	for locale, localization := range cfg.Localizations {
 		values := map[string]string{}
 		for field := range localization.Values.Map() {
@@ -283,7 +294,11 @@ func ClearingChanges(changes []appstore.Change) []appstore.Change {
 func PrintChanges(w io.Writer, changes []appstore.Change) {
 	for _, change := range changes {
 		if change.Locale == "" {
-			fmt.Fprintf(w, "metadata.%s\n", change.Field)
+			prefix := "metadata"
+			if isCategoryField(change.Field) {
+				prefix = "categories"
+			}
+			fmt.Fprintf(w, "%s.%s\n", prefix, change.Field)
 		} else {
 			fmt.Fprintf(w, "%s.%s\n", change.Locale, change.Field)
 		}
@@ -327,6 +342,29 @@ func Validate(values appstore.Metadata) []string {
 	if value, configured := values.Values["content_rights_declaration"]; configured && value != "" && value != "DOES_NOT_USE_THIRD_PARTY_CONTENT" && value != "USES_THIRD_PARTY_CONTENT" {
 		problems = append(problems, "metadata.content_rights_declaration must be DOES_NOT_USE_THIRD_PARTY_CONTENT or USES_THIRD_PARTY_CONTENT")
 	}
+	if _, managed := values.Values["primary_category"]; managed && strings.TrimSpace(values.Values["primary_category"]) == "" {
+		problems = append(problems, "categories.primary_category is empty")
+	}
+	if primary, secondary := values.Values["primary_category"], values.Values["secondary_category"]; primary != "" && primary == secondary {
+		problems = append(problems, "categories.primary_category and categories.secondary_category must differ")
+	}
+	if values.Values["primary_category"] == "" && (values.Values["primary_subcategory_one"] != "" || values.Values["primary_subcategory_two"] != "") {
+		problems = append(problems, "primary subcategories require categories.primary_category")
+	}
+	if values.Values["primary_subcategory_one"] == "" && values.Values["primary_subcategory_two"] != "" {
+		problems = append(problems, "categories.primary_subcategory_two requires primary_subcategory_one")
+	}
+	if values.Values["secondary_category"] == "" && (values.Values["secondary_subcategory_one"] != "" || values.Values["secondary_subcategory_two"] != "") {
+		problems = append(problems, "secondary subcategories require categories.secondary_category")
+	}
+	if values.Values["secondary_subcategory_one"] == "" && values.Values["secondary_subcategory_two"] != "" {
+		problems = append(problems, "categories.secondary_subcategory_two requires secondary_subcategory_one")
+	}
+	for field, value := range values.Values {
+		if isCategoryField(field) && value != "" && strings.TrimSpace(value) != value {
+			problems = append(problems, fmt.Sprintf("categories.%s contains leading or trailing whitespace", field))
+		}
+	}
 	locales := values.Locales()
 	for _, locale := range locales {
 		fields := values.Localizations[locale].Values
@@ -369,4 +407,13 @@ func Validate(values appstore.Metadata) []string {
 func validHTTPURL(value string) bool {
 	parsed, err := url.ParseRequestURI(value)
 	return err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != ""
+}
+
+func isCategoryField(field string) bool {
+	switch field {
+	case "primary_category", "primary_subcategory_one", "primary_subcategory_two", "secondary_category", "secondary_subcategory_one", "secondary_subcategory_two":
+		return true
+	default:
+		return false
+	}
 }

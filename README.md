@@ -128,6 +128,13 @@ metadata:
   copyright: "2026 Example, Inc." # Year and rights holder, for example: 2026 Example, Inc.
   accessibility_url: "https://example.com/accessibility" # Optional public HTTP(S) accessibility information page
   content_rights_declaration: DOES_NOT_USE_THIRD_PARTY_CONTENT # Whether the app uses third-party content
+categories:
+  primary_category: PRODUCTIVITY # Required top-level App Store category ID
+  primary_subcategory_one: "" # Optional first Games or Stickers subcategory ID
+  primary_subcategory_two: "" # Optional second Games or Stickers subcategory ID
+  secondary_category: UTILITIES # Optional secondary top-level App Store category ID
+  secondary_subcategory_one: "" # Optional first secondary Games or Stickers subcategory ID
+  secondary_subcategory_two: "" # Optional second secondary Games or Stickers subcategory ID
 localizations:
   en-US:
     values:
@@ -162,6 +169,8 @@ Non-localized fields:
 - Version copyright
 - App accessibility URL
 - Content rights declaration
+- Primary and secondary categories
+- Games and Stickers subcategories
 
 App-level localization fields:
 
