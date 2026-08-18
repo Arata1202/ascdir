@@ -125,6 +125,21 @@ func TestValidateCategories(t *testing.T) {
 	}
 }
 
+func TestValidateAgeRating(t *testing.T) {
+	t.Parallel()
+	values := appstore.Metadata{Values: map[string]string{
+		"kids_age_band": "TODDLER", "violence_cartoon_or_fantasy": "OFTEN",
+		"developer_age_rating_info_url": "not a URL",
+	}}
+	problems := Validate(values)
+	joined := strings.Join(problems, "\n")
+	for _, expected := range []string{"kids_age_band", "violence_cartoon_or_fantasy", "developer_age_rating_info_url"} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("problems = %#v; missing %q", problems, expected)
+		}
+	}
+}
+
 func TestDiffAndPrintGlobalMetadata(t *testing.T) {
 	t.Parallel()
 	desired := appstore.Metadata{Values: map[string]string{"copyright": "2026 Example, Inc.", "primary_category": "BUSINESS"}}

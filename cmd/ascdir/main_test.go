@@ -23,7 +23,7 @@ import (
 
 type mockStoreClient struct {
 	checkAuth     func(context.Context) error
-	fetchMetadata func(context.Context, string, string, string, string) (appstore.Metadata, error)
+	fetchMetadata func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
 	applyMetadata func(context.Context, appstore.Metadata, []string, []appstore.Change) error
 }
 
@@ -31,8 +31,8 @@ func (m mockStoreClient) CheckAuth(ctx context.Context) error {
 	return m.checkAuth(ctx)
 }
 
-func (m mockStoreClient) FetchMetadata(ctx context.Context, appID, bundleID, platform, version string) (appstore.Metadata, error) {
-	return m.fetchMetadata(ctx, appID, bundleID, platform, version)
+func (m mockStoreClient) FetchMetadata(ctx context.Context, appID, bundleID, platform, version string, options appstore.FetchOptions) (appstore.Metadata, error) {
+	return m.fetchMetadata(ctx, appID, bundleID, platform, version, options)
 }
 
 func (m mockStoreClient) ApplyMetadata(ctx context.Context, remote appstore.Metadata, locales []string, changes []appstore.Change) error {
@@ -101,6 +101,19 @@ func TestRunCheckRejectsUnexpectedArgument(t *testing.T) {
 	t.Parallel()
 	if err := runCheck([]string{"extra"}); err == nil || !strings.Contains(err.Error(), "unexpected argument") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFetchOptionsFollowManagedSections(t *testing.T) {
+	t.Parallel()
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	if fetchOptions(cfg).AgeRating {
+		t.Fatal("unmanaged age rating was requested")
+	}
+	value := false
+	cfg.AgeRating.Advertising = &value
+	if !fetchOptions(cfg).AgeRating {
+		t.Fatal("managed age rating was not requested")
 	}
 }
 
@@ -199,9 +212,12 @@ func TestRunInitPullAndPush(t *testing.T) {
 	}
 	var applied []appstore.Change
 	client := mockStoreClient{
-		fetchMetadata: func(_ context.Context, _, bundleID, platform, version string) (appstore.Metadata, error) {
+		fetchMetadata: func(_ context.Context, appID, bundleID, platform, version string, options appstore.FetchOptions) (appstore.Metadata, error) {
 			if bundleID != "com.example.app" || platform != "IOS" || version != "1.0.0" {
 				t.Fatalf("unexpected lookup: %q %q %q", bundleID, platform, version)
+			}
+			if appID == "" && !options.AgeRating {
+				t.Fatal("init did not request age rating metadata")
 			}
 			return remote, nil
 		},
@@ -289,7 +305,7 @@ localizations:
 		"en-US": {Values: map[string]string{"name": "Example", "description": "Description"}},
 	}}
 	client := mockStoreClient{
-		fetchMetadata: func(context.Context, string, string, string, string) (appstore.Metadata, error) {
+		fetchMetadata: func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error) {
 			return remote, nil
 		},
 	}
@@ -337,7 +353,9 @@ func TestRunPushRequiresExplicitPermissionToClear(t *testing.T) {
 	}
 	var applyCalls int
 	client := mockStoreClient{
-		fetchMetadata: func(context.Context, string, string, string, string) (appstore.Metadata, error) { return remote, nil },
+		fetchMetadata: func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error) {
+			return remote, nil
+		},
 		applyMetadata: func(context.Context, appstore.Metadata, []string, []appstore.Change) error { applyCalls++; return nil },
 	}
 	environment, _, _ := testEnvironment(client)
@@ -349,6 +367,51 @@ func TestRunPushRequiresExplicitPermissionToClear(t *testing.T) {
 		t.Fatalf("apply calls = %d", applyCalls)
 	}
 	if err := runWithEnvironment(context.Background(), append(args, "--allow-empty"), environment); err != nil {
+		t.Fatal(err)
+	}
+	if applyCalls != 1 {
+		t.Fatalf("apply calls = %d", applyCalls)
+	}
+}
+
+func TestRunPushRequiresExplicitPermissionForMadeForKids(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	configPath := filepath.Join(directory, "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	cfg.Metadata = config.MetadataValues{}
+	cfg.Categories = config.CategoryValues{}
+	kidsAgeBand := "FIVE_AND_UNDER"
+	cfg.AgeRating = config.AgeRatingValues{KidsAgeBand: &kidsAgeBand}
+	localization := cfg.Localizations["en-US"]
+	name := "Example"
+	localization.Values = config.LocaleValues{Name: &name}
+	localization.Files = config.LocaleFiles{}
+	cfg.Localizations["en-US"] = localization
+	if err := config.Save(configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	remote := appstore.Metadata{
+		AppID: "app-1", AppInfoID: "info-1", VersionID: "version-1", AgeRatingID: "rating-1",
+		Values:        map[string]string{"kids_age_band": ""},
+		Localizations: map[string]appstore.Localization{"en-US": {AppInfoLocalizationID: "info-loc-1", VersionLocalizationID: "version-loc-1", Values: map[string]string{"name": "Example"}}},
+	}
+	applyCalls := 0
+	client := mockStoreClient{
+		fetchMetadata: func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error) {
+			return remote, nil
+		},
+		applyMetadata: func(context.Context, appstore.Metadata, []string, []appstore.Change) error { applyCalls++; return nil },
+	}
+	environment, _, _ := testEnvironment(client)
+	args := []string{"push", "--config", configPath}
+	if err := runWithEnvironment(context.Background(), args, environment); err == nil || !strings.Contains(err.Error(), "--allow-irreversible") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if applyCalls != 0 {
+		t.Fatalf("apply calls = %d", applyCalls)
+	}
+	if err := runWithEnvironment(context.Background(), append(args, "--allow-irreversible"), environment); err != nil {
 		t.Fatal(err)
 	}
 	if applyCalls != 1 {

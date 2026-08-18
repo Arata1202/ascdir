@@ -38,8 +38,16 @@ type Metadata struct {
 	AppID         string
 	AppInfoID     string
 	VersionID     string
+	AgeRatingID   string
 	Values        map[string]string
 	Localizations map[string]Localization
+}
+
+// FetchOptions limits optional App Store Connect resources to the features a
+// configuration manages. This keeps existing projects usable with least-
+// privilege API keys that cannot access newly supported resource families.
+type FetchOptions struct {
+	AgeRating bool
 }
 
 type Localization struct {
@@ -117,7 +125,7 @@ func (m Metadata) Locales() []string {
 	return locales
 }
 
-func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, version string) (Metadata, error) {
+func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, version string, options FetchOptions) (Metadata, error) {
 	app, err := c.resolveApp(ctx, appID, bundleID)
 	if err != nil {
 		return Metadata{}, err
@@ -148,6 +156,15 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 		return Metadata{}, err
 	}
 	result.AppInfoID = appInfo.ID
+	if options.AgeRating {
+		var ageRatingResponse singleResponse
+		ageRatingPath := fmt.Sprintf("/v1/appInfos/%s/ageRatingDeclaration", result.AppInfoID)
+		if err := c.doJSON(ctx, http.MethodGet, ageRatingPath, nil, &ageRatingResponse); err != nil {
+			return Metadata{}, err
+		}
+		result.AgeRatingID = ageRatingResponse.Data.ID
+		copyAgeRatingAttributes(result.Values, ageRatingResponse.Data.Attributes)
+	}
 	var appInfoResponse singleResponse
 	categoryIncludes := strings.Join(sortedRemoteFields(categoryFields), ",")
 	appInfoPath := fmt.Sprintf("/v1/appInfos/%s?include=%s", result.AppInfoID, categoryIncludes)
@@ -275,6 +292,16 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 					data = map[string]string{"type": "appCategories", "id": change.After}
 				}
 				value = map[string]any{"data": data}
+			} else if group == "age_rating" {
+				if change.After == "" {
+					value = nil
+				} else if ageRatingBooleanFields[change.Field] {
+					parsed, err := strconv.ParseBool(change.After)
+					if err != nil {
+						return fmt.Errorf("invalid boolean value for %s: %w", change.Field, err)
+					}
+					value = parsed
+				}
 			} else if (change.Field == "accessibility_url" || change.Field == "content_rights_declaration") && change.After == "" {
 				value = nil
 			}
@@ -306,6 +333,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		}
 		if group == "app_store_version" {
 			resourceType, resourceID = "appStoreVersions", remote.VersionID
+		}
+		if group == "age_rating" {
+			resourceType, resourceID = "ageRatingDeclarations", remote.AgeRatingID
 		}
 		if err := c.patchResourceSection(ctx, resourceType, resourceID, section, global[group]); err != nil {
 			if index == 0 {
@@ -437,6 +467,9 @@ func globalFieldGroup(field string) (string, map[string]string, bool) {
 	}
 	if _, ok := categoryFields[field]; ok {
 		return "app_info_categories", categoryFields, true
+	}
+	if _, ok := ageRatingFields[field]; ok {
+		return "age_rating", ageRatingFields, true
 	}
 	return "", nil, false
 }

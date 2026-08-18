@@ -18,6 +18,7 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	t.Parallel()
 	var mutations []map[string]any
 	var mutationPaths []string
+	ageRatingRequests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 			t.Error("missing bearer token")
@@ -33,6 +34,11 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 				"primaryCategory":   {Data: &resourceIdentifier{Type: "appCategories", ID: "PRODUCTIVITY"}},
 				"secondaryCategory": {Data: &resourceIdentifier{Type: "appCategories", ID: "UTILITIES"}},
 			}}}); err != nil {
+				t.Error(err)
+			}
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/appInfos/info-1/ageRatingDeclaration":
+			ageRatingRequests++
+			if err := json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("rating-1", "ageRatingDeclarations", map[string]any{"advertising": false, "kidsAgeBand": nil, "violenceCartoonOrFantasy": "NONE"})}); err != nil {
 				t.Error(err)
 			}
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/appInfos/info-1/appInfoLocalizations":
@@ -56,7 +62,7 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	defer server.Close()
 
 	client := testClient(t, server.URL)
-	remote, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0")
+	remote, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0", FetchOptions{AgeRating: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +80,13 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	}
 	if remote.Values["primary_category"] != "PRODUCTIVITY" || remote.Values["secondary_category"] != "UTILITIES" {
 		t.Fatalf("categories = %#v", remote.Values)
+	}
+	withoutAgeRating, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0", FetchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutAgeRating.AgeRatingID != "" || ageRatingRequests != 1 {
+		t.Fatalf("optional age rating request was not skipped: ID=%q requests=%d", withoutAgeRating.AgeRatingID, ageRatingRequests)
 	}
 	changes := []Change{
 		{Field: "copyright", Before: "2025 Example, Inc.", After: "2026 Example, Inc."},
@@ -118,7 +131,7 @@ func TestAPIErrorDoesNotExposeResponseBody(t *testing.T) {
 	}))
 	defer server.Close()
 	client := testClient(t, server.URL)
-	_, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0")
+	_, err := client.FetchMetadata(context.Background(), "", "com.example.app", "IOS", "1.0.0", FetchOptions{})
 	if err == nil || !strings.Contains(err.Error(), "FORBIDDEN") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -353,6 +366,58 @@ func TestApplyMetadataClearsNullableAccessibilityURL(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestApplyMetadataEncodesAgeRatingScalars(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/v1/ageRatingDeclarations/rating-1" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected request", http.StatusNotFound)
+			return
+		}
+		var body struct {
+			Data struct {
+				Attributes map[string]any `json:"attributes"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		attributes := body.Data.Attributes
+		if attributes["advertising"] != true || attributes["violenceCartoonOrFantasy"] != "NONE" {
+			t.Fatalf("attributes = %#v", attributes)
+		}
+		if value, exists := attributes["kidsAgeBand"]; !exists || value != nil {
+			t.Fatalf("kidsAgeBand = %#v, exists = %t", value, exists)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	err := client.ApplyMetadata(context.Background(), Metadata{AgeRatingID: "rating-1"}, nil, []Change{
+		{Field: "advertising", After: "true"},
+		{Field: "kids_age_band", Before: "SIX_TO_EIGHT", After: ""},
+		{Field: "violence_cartoon_or_fantasy", After: "NONE"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgeRatingAPIFieldRegistryIsComplete(t *testing.T) {
+	t.Parallel()
+	if len(ageRatingFields) != 28 {
+		t.Fatalf("age rating API fields = %d, want 28", len(ageRatingFields))
+	}
+	if len(ageRatingBooleanFields) != 11 {
+		t.Fatalf("age rating boolean fields = %d, want 11", len(ageRatingBooleanFields))
+	}
+	for field := range ageRatingBooleanFields {
+		if _, exists := ageRatingFields[field]; !exists {
+			t.Fatalf("boolean field %q is missing from API field registry", field)
+		}
 	}
 }
 

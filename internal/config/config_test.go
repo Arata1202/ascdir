@@ -117,6 +117,56 @@ localizations:
 	if len(cfg.Categories.Map()) != 0 {
 		t.Fatalf("categories unexpectedly became managed: %#v", cfg.Categories.Map())
 	}
+	if len(cfg.AgeRating.Map()) != 0 {
+		t.Fatalf("age rating unexpectedly became managed: %#v", cfg.AgeRating.Map())
+	}
+}
+
+func TestAgeRatingBooleansRemainTypedWhenUpdated(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	contents := `version: "2"
+app:
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.0.0
+age_rating:
+  advertising: false # keep me
+  violence_cartoon_or_fantasy: NONE
+localizations:
+  en-US:
+    values:
+      name: Example
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.AgeRating.SetManaged("advertising", "true")
+	updated, err := EncodeUpdatedValues(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(updated)
+	if !strings.Contains(text, "advertising: true # keep me") || strings.Contains(text, `advertising: "true"`) {
+		t.Fatalf("updated boolean was not preserved as a YAML boolean:\n%s", text)
+	}
+}
+
+func TestAgeRatingFieldRegistryIsComplete(t *testing.T) {
+	t.Parallel()
+	remote := map[string]string{}
+	for _, field := range ageRatingFieldNames() {
+		remote[field] = "true"
+	}
+	var values AgeRatingValues
+	values.ManageAll(remote)
+	if got, want := len(values.Map()), len(ageRatingFieldNames()); got != want || want != 28 {
+		t.Fatalf("managed age rating fields = %d, registry = %d; want 28", got, want)
+	}
 }
 
 func TestEncodeUpdatedValuesPreservesCommentsAndKeyOrder(t *testing.T) {

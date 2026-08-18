@@ -29,7 +29,7 @@ var (
 
 type storeClient interface {
 	CheckAuth(context.Context) error
-	FetchMetadata(context.Context, string, string, string, string) (appstore.Metadata, error)
+	FetchMetadata(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
 	ApplyMetadata(context.Context, appstore.Metadata, []string, []appstore.Change) error
 }
 
@@ -127,7 +127,7 @@ Usage:
   ascdir auth check
   ascdir auth logout
   ascdir pull  [--config ascdir.yaml] [--dry-run]
-  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty]
+  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible]
   ascdir check [--config ascdir.yaml]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
@@ -267,7 +267,7 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 	if err != nil {
 		return err
 	}
-	remote, err := client.FetchMetadata(ctx, "", normalizedBundleID, normalizedPlatform, normalizedVersion)
+	remote, err := client.FetchMetadata(ctx, "", normalizedBundleID, normalizedPlatform, normalizedVersion, appstore.FetchOptions{AgeRating: true})
 	if err != nil {
 		return err
 	}
@@ -276,6 +276,7 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 		locales = []string{normalizedLocale}
 	}
 	cfg := config.New(remote.AppID, normalizedBundleID, normalizedPlatform, normalizedVersion, locales)
+	cfg.AgeRating.ManageAll(remote.Values)
 	if err := metadata.WriteLocalNew(cfg, *configPath, remote); err != nil {
 		return err
 	}
@@ -301,7 +302,7 @@ func runPull(ctx context.Context, args []string, environment commandEnvironment)
 	if err != nil {
 		return err
 	}
-	remote, err := client.FetchMetadata(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version)
+	remote, err := client.FetchMetadata(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version, fetchOptions(cfg))
 	if err != nil {
 		return err
 	}
@@ -331,6 +332,7 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	configPath := fs.String("config", "ascdir.yaml", "configuration file")
 	dryRun := fs.Bool("dry-run", false, "show changes without updating App Store Connect")
 	allowEmpty := fs.Bool("allow-empty", false, "allow clearing non-empty remote fields")
+	allowIrreversible := fs.Bool("allow-irreversible", false, "allow changes Apple may make irreversible, such as Made for Kids")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -355,7 +357,7 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	if err != nil {
 		return err
 	}
-	remote, err := client.FetchMetadata(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version)
+	remote, err := client.FetchMetadata(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version, fetchOptions(cfg))
 	if err != nil {
 		return err
 	}
@@ -377,6 +379,13 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	clears := metadata.ClearingChanges(changes)
 	if len(clears) > 0 && !*allowEmpty {
 		return fmt.Errorf("%d change(s) would clear non-empty remote fields; review with --dry-run and rerun with --allow-empty", len(clears))
+	}
+	if !*allowIrreversible {
+		for _, change := range changes {
+			if change.Locale == "" && change.Field == "kids_age_band" {
+				return errors.New("changing age_rating.kids_age_band may be irreversible after App Review; review with --dry-run and rerun with --allow-irreversible")
+			}
+		}
 	}
 	if err := client.ApplyMetadata(ctx, remote, desired.Locales(), changes); err != nil {
 		return err
@@ -422,6 +431,10 @@ func requireNoArgs(fs *flag.FlagSet) error {
 		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
 	return nil
+}
+
+func fetchOptions(cfg config.Config) appstore.FetchOptions {
+	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0}
 }
 
 func newClient(stderr io.Writer) (*appstore.Client, error) {

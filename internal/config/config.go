@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Arata1202/ascdir/internal/atomicfile"
@@ -20,7 +21,42 @@ type Config struct {
 	App           App                     `yaml:"app"`
 	Metadata      MetadataValues          `yaml:"metadata,omitempty"`
 	Categories    CategoryValues          `yaml:"categories,omitempty"`
+	AgeRating     AgeRatingValues         `yaml:"age_rating,omitempty"`
 	Localizations map[string]Localization `yaml:"localizations"`
+}
+
+// AgeRatingValues mirrors Apple's age rating declaration. Pointer values make
+// every answer opt-in, so adding ascdir to an existing project never changes
+// its declaration unless the corresponding key is present.
+type AgeRatingValues struct {
+	Advertising                                 *bool   `yaml:"advertising,omitempty"`
+	AlcoholTobaccoOrDrugUseOrReferences         *string `yaml:"alcohol_tobacco_or_drug_use_or_references,omitempty"`
+	Contests                                    *string `yaml:"contests,omitempty"`
+	Gambling                                    *bool   `yaml:"gambling,omitempty"`
+	GamblingSimulated                           *string `yaml:"gambling_simulated,omitempty"`
+	GunsOrOtherWeapons                          *string `yaml:"guns_or_other_weapons,omitempty"`
+	HealthOrWellnessTopics                      *bool   `yaml:"health_or_wellness_topics,omitempty"`
+	KidsAgeBand                                 *string `yaml:"kids_age_band,omitempty"`
+	LootBox                                     *bool   `yaml:"loot_box,omitempty"`
+	MedicalOrTreatmentInformation               *string `yaml:"medical_or_treatment_information,omitempty"`
+	MessagingAndChat                            *bool   `yaml:"messaging_and_chat,omitempty"`
+	ParentalControls                            *bool   `yaml:"parental_controls,omitempty"`
+	ProfanityOrCrudeHumor                       *string `yaml:"profanity_or_crude_humor,omitempty"`
+	AgeAssurance                                *bool   `yaml:"age_assurance,omitempty"`
+	SexualContentGraphicAndNudity               *string `yaml:"sexual_content_graphic_and_nudity,omitempty"`
+	SexualContentOrNudity                       *string `yaml:"sexual_content_or_nudity,omitempty"`
+	SocialMedia                                 *bool   `yaml:"social_media,omitempty"`
+	SocialMediaAgeRestricted                    *bool   `yaml:"social_media_age_restricted,omitempty"`
+	HorrorOrFearThemes                          *string `yaml:"horror_or_fear_themes,omitempty"`
+	MatureOrSuggestiveThemes                    *string `yaml:"mature_or_suggestive_themes,omitempty"`
+	UnrestrictedWebAccess                       *bool   `yaml:"unrestricted_web_access,omitempty"`
+	UserGeneratedContent                        *bool   `yaml:"user_generated_content,omitempty"`
+	ViolenceCartoonOrFantasy                    *string `yaml:"violence_cartoon_or_fantasy,omitempty"`
+	ViolenceRealisticProlongedGraphicOrSadistic *string `yaml:"violence_realistic_prolonged_graphic_or_sadistic,omitempty"`
+	ViolenceRealistic                           *string `yaml:"violence_realistic,omitempty"`
+	AgeRatingOverrideV2                         *string `yaml:"age_rating_override,omitempty"`
+	KoreaAgeRatingOverride                      *string `yaml:"korea_age_rating_override,omitempty"`
+	DeveloperAgeRatingInfoURL                   *string `yaml:"developer_age_rating_info_url,omitempty"`
 }
 
 type App struct {
@@ -304,6 +340,9 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 	if err := updateScalarMapping(mappingValue(root, "categories"), "categories", cfg.Categories.Pointers()); err != nil {
 		return nil, err
 	}
+	if err := updateScalarMapping(mappingValue(root, "age_rating"), "age_rating", cfg.AgeRating.Pointers()); err != nil {
+		return nil, err
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
@@ -336,7 +375,9 @@ func updateScalarMapping(mapping *yaml.Node, label string, values map[string]*st
 			return fmt.Errorf("update config: managed field %s.%s is not a scalar", label, field)
 		}
 		valueNode.Value = *pointer
-		valueNode.Tag = "!!str"
+		if valueNode.Tag != "!!bool" {
+			valueNode.Tag = "!!str"
+		}
 	}
 	return nil
 }
@@ -378,6 +419,7 @@ func addSchemaComments(document *yaml.Node) {
 		"secondary_subcategory_one": "Optional first secondary Games or Stickers subcategory ID",
 		"secondary_subcategory_two": "Optional second secondary Games or Stickers subcategory ID",
 	})
+	addMappingComments(mappingValue(root, "age_rating"), ageRatingComments())
 	for index := 0; index+1 < len(localizations.Content); index += 2 {
 		locale := localizations.Content[index+1]
 		addMappingComments(mappingValue(locale, "values"), valueComments)
@@ -577,6 +619,138 @@ func (v *CategoryValues) SetManaged(field, value string) {
 	case "secondary_subcategory_two":
 		v.SecondarySubcategoryTwo = pointer
 	}
+}
+
+func (v AgeRatingValues) Map() map[string]string {
+	result := map[string]string{}
+	for field, value := range v.Pointers() {
+		if value != nil {
+			result[field] = *value
+		}
+	}
+	return result
+}
+
+// ManageAll configures every age rating answer from values returned by Apple.
+// It is intended for init; existing configurations remain opt-in per field.
+func (v *AgeRatingValues) ManageAll(values map[string]string) {
+	for _, field := range ageRatingFieldNames() {
+		if value, present := values[field]; present {
+			v.SetManaged(field, value)
+		}
+	}
+}
+
+func (v AgeRatingValues) Pointers() map[string]*string {
+	stringValue := func(value *string) *string { return value }
+	boolValue := func(value *bool) *string {
+		if value == nil {
+			return nil
+		}
+		text := strconv.FormatBool(*value)
+		return &text
+	}
+	return map[string]*string{
+		"advertising": boolValue(v.Advertising), "alcohol_tobacco_or_drug_use_or_references": stringValue(v.AlcoholTobaccoOrDrugUseOrReferences),
+		"contests": stringValue(v.Contests), "gambling": boolValue(v.Gambling), "gambling_simulated": stringValue(v.GamblingSimulated),
+		"guns_or_other_weapons": stringValue(v.GunsOrOtherWeapons), "health_or_wellness_topics": boolValue(v.HealthOrWellnessTopics),
+		"kids_age_band": stringValue(v.KidsAgeBand), "loot_box": boolValue(v.LootBox), "medical_or_treatment_information": stringValue(v.MedicalOrTreatmentInformation),
+		"messaging_and_chat": boolValue(v.MessagingAndChat), "parental_controls": boolValue(v.ParentalControls), "profanity_or_crude_humor": stringValue(v.ProfanityOrCrudeHumor),
+		"age_assurance": boolValue(v.AgeAssurance), "sexual_content_graphic_and_nudity": stringValue(v.SexualContentGraphicAndNudity),
+		"sexual_content_or_nudity": stringValue(v.SexualContentOrNudity), "social_media": boolValue(v.SocialMedia),
+		"social_media_age_restricted": boolValue(v.SocialMediaAgeRestricted), "horror_or_fear_themes": stringValue(v.HorrorOrFearThemes),
+		"mature_or_suggestive_themes": stringValue(v.MatureOrSuggestiveThemes), "unrestricted_web_access": boolValue(v.UnrestrictedWebAccess),
+		"user_generated_content": boolValue(v.UserGeneratedContent), "violence_cartoon_or_fantasy": stringValue(v.ViolenceCartoonOrFantasy),
+		"violence_realistic_prolonged_graphic_or_sadistic": stringValue(v.ViolenceRealisticProlongedGraphicOrSadistic),
+		"violence_realistic": stringValue(v.ViolenceRealistic), "age_rating_override": stringValue(v.AgeRatingOverrideV2),
+		"korea_age_rating_override": stringValue(v.KoreaAgeRatingOverride), "developer_age_rating_info_url": stringValue(v.DeveloperAgeRatingInfoURL),
+	}
+}
+
+func (v *AgeRatingValues) SetManaged(field, value string) {
+	sp := stringPointer(value)
+	bp := func() *bool { parsed, _ := strconv.ParseBool(value); return &parsed }
+	switch field {
+	case "advertising":
+		v.Advertising = bp()
+	case "alcohol_tobacco_or_drug_use_or_references":
+		v.AlcoholTobaccoOrDrugUseOrReferences = sp
+	case "contests":
+		v.Contests = sp
+	case "gambling":
+		v.Gambling = bp()
+	case "gambling_simulated":
+		v.GamblingSimulated = sp
+	case "guns_or_other_weapons":
+		v.GunsOrOtherWeapons = sp
+	case "health_or_wellness_topics":
+		v.HealthOrWellnessTopics = bp()
+	case "kids_age_band":
+		v.KidsAgeBand = sp
+	case "loot_box":
+		v.LootBox = bp()
+	case "medical_or_treatment_information":
+		v.MedicalOrTreatmentInformation = sp
+	case "messaging_and_chat":
+		v.MessagingAndChat = bp()
+	case "parental_controls":
+		v.ParentalControls = bp()
+	case "profanity_or_crude_humor":
+		v.ProfanityOrCrudeHumor = sp
+	case "age_assurance":
+		v.AgeAssurance = bp()
+	case "sexual_content_graphic_and_nudity":
+		v.SexualContentGraphicAndNudity = sp
+	case "sexual_content_or_nudity":
+		v.SexualContentOrNudity = sp
+	case "social_media":
+		v.SocialMedia = bp()
+	case "social_media_age_restricted":
+		v.SocialMediaAgeRestricted = bp()
+	case "horror_or_fear_themes":
+		v.HorrorOrFearThemes = sp
+	case "mature_or_suggestive_themes":
+		v.MatureOrSuggestiveThemes = sp
+	case "unrestricted_web_access":
+		v.UnrestrictedWebAccess = bp()
+	case "user_generated_content":
+		v.UserGeneratedContent = bp()
+	case "violence_cartoon_or_fantasy":
+		v.ViolenceCartoonOrFantasy = sp
+	case "violence_realistic_prolonged_graphic_or_sadistic":
+		v.ViolenceRealisticProlongedGraphicOrSadistic = sp
+	case "violence_realistic":
+		v.ViolenceRealistic = sp
+	case "age_rating_override":
+		v.AgeRatingOverrideV2 = sp
+	case "korea_age_rating_override":
+		v.KoreaAgeRatingOverride = sp
+	case "developer_age_rating_info_url":
+		v.DeveloperAgeRatingInfoURL = sp
+	}
+}
+
+func ageRatingFieldNames() []string {
+	return []string{
+		"advertising", "alcohol_tobacco_or_drug_use_or_references", "contests", "gambling", "gambling_simulated",
+		"guns_or_other_weapons", "health_or_wellness_topics", "kids_age_band", "loot_box", "medical_or_treatment_information",
+		"messaging_and_chat", "parental_controls", "profanity_or_crude_humor", "age_assurance",
+		"sexual_content_graphic_and_nudity", "sexual_content_or_nudity", "social_media", "social_media_age_restricted",
+		"horror_or_fear_themes", "mature_or_suggestive_themes", "unrestricted_web_access", "user_generated_content",
+		"violence_cartoon_or_fantasy", "violence_realistic_prolonged_graphic_or_sadistic", "violence_realistic",
+		"age_rating_override", "korea_age_rating_override", "developer_age_rating_info_url",
+	}
+}
+
+func ageRatingComments() map[string]string {
+	comments := map[string]string{}
+	for _, field := range ageRatingFieldNames() {
+		comments[field] = "Apple age rating declaration answer"
+	}
+	comments["kids_age_band"] = "Made for Kids: FIVE_AND_UNDER, SIX_TO_EIGHT, NINE_TO_ELEVEN, or empty"
+	comments["age_rating_override"] = "Optional computed-rating override: NONE, NINE_PLUS, THIRTEEN_PLUS, SIXTEEN_PLUS, EIGHTEEN_PLUS, or UNRATED"
+	comments["developer_age_rating_info_url"] = "Optional public HTTP(S) age rating information page"
+	return comments
 }
 
 func stringPointer(value string) *string { return &value }

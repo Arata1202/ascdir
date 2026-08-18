@@ -135,6 +135,11 @@ categories:
   secondary_category: UTILITIES # Optional secondary top-level App Store category ID
   secondary_subcategory_one: "" # Optional first secondary Games or Stickers subcategory ID
   secondary_subcategory_two: "" # Optional second secondary Games or Stickers subcategory ID
+age_rating:
+  advertising: false # Boolean capability or content declaration
+  kids_age_band: "" # Made for Kids: FIVE_AND_UNDER, SIX_TO_EIGHT, NINE_TO_ELEVEN, or empty
+  violence_cartoon_or_fantasy: NONE # Content frequency declaration
+  developer_age_rating_info_url: "" # Optional public HTTP(S) age rating information page
 localizations:
   en-US:
     values:
@@ -171,6 +176,7 @@ Non-localized fields:
 - Content rights declaration
 - Primary and secondary categories
 - Games and Stickers subcategories
+- Age rating declaration, including Made for Kids
 
 App-level localization fields:
 
@@ -218,6 +224,15 @@ Clearing a non-empty remote field requires the explicit `--allow-empty` flag:
 ascdir push --dry-run
 ascdir push --allow-empty
 ```
+
+Changing `age_rating.kids_age_band` may become irreversible after App Review, so it also requires explicit confirmation:
+
+```sh
+ascdir push --dry-run
+ascdir push --allow-irreversible
+```
+
+See [Age rating configuration](docs/age-rating.md) for every supported declaration and enum value.
 
 Apple only permits most version metadata to change while the version is in an editable state. API errors are returned without hiding Apple's error code or detail.
 
