@@ -164,13 +164,18 @@ func assetsEqual(before, after []appstore.Asset) bool {
 func AssetSetDeletesRemoteFiles(change appstore.AssetSetChange) bool {
 	remaining := map[string]int{}
 	for _, asset := range change.After {
-		remaining[asset.Checksum]++
+		remaining[assetDeletionKey(change.Kind, asset)]++
 	}
 	for _, asset := range change.Before {
-		if remaining[asset.Checksum] == 0 {
+		key := assetDeletionKey(change.Kind, asset)
+		if remaining[key] == 0 {
 			return true
 		}
-		remaining[asset.Checksum]--
+		remaining[key]--
 	}
 	return false
+}
+
+func assetDeletionKey(kind string, asset appstore.Asset) string {
+	return asset.Checksum
 }
