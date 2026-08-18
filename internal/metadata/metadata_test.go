@@ -34,6 +34,9 @@ func TestWriteReadAndDiff(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "metadata", "en-US", "description.md")); err != nil {
 		t.Fatalf("long-form metadata file was not written: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "metadata", "en-US", "privacy_policy.md")); !os.IsNotExist(err) {
+		t.Fatalf("iOS project unexpectedly wrote tvOS privacy policy text: %v", err)
+	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		t.Fatal(err)

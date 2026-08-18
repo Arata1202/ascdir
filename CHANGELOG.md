@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Generate `privacy_policy.md` only for newly initialized tvOS projects while preserving existing configurations that manage the field explicitly.
+
+### Changed
+
+- Clarify that long-form `.md` files are sent to App Store Connect as plain text.
+- Document text metadata lifecycle, troubleshooting, supported release platforms, and additional installation methods.
+
 ## [1.1.1] - 2026-08-19
 
 ### Fixed

@@ -33,7 +33,7 @@ type Config struct {
 }
 
 // LicenseAgreementValues manages an optional custom EULA. Omitting the
-// section leaves Apple's standard EULA untouched.
+// section leaves the remote agreement unmanaged.
 type LicenseAgreementValues struct {
 	File        string   `yaml:"file"`
 	Territories []string `yaml:"territories"`
@@ -279,6 +279,10 @@ func New(appID, bundleID, platform, version string, locales []string) Config {
 	}
 	for _, locale := range locales {
 		base := filepath.ToSlash(filepath.Join("metadata", locale))
+		privacyPolicyText := ""
+		if platform == "TV_OS" {
+			privacyPolicyText = base + "/privacy_policy.md"
+		}
 		cfg.Localizations[locale] = Localization{
 			Values: LocaleValues{
 				Name:              stringPointer(""),
@@ -293,7 +297,7 @@ func New(appID, bundleID, platform, version string, locales []string) Config {
 				Description:       base + "/description.md",
 				PromotionalText:   base + "/promotional_text.md",
 				WhatsNew:          base + "/whats_new.md",
-				PrivacyPolicyText: base + "/privacy_policy.md",
+				PrivacyPolicyText: privacyPolicyText,
 			},
 		}
 	}
@@ -562,10 +566,16 @@ func addSchemaComments(document *yaml.Node) {
 	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
 		root = root.Content[0]
 	}
+	addMappingComments(root, map[string]string{
+		"version": "ascdir configuration schema version",
+	})
+	addMappingComments(mappingValue(root, "app"), map[string]string{
+		"id":        "App Store Connect app ID; populated by init",
+		"bundle_id": "App bundle identifier",
+		"platform":  "IOS, MAC_OS, TV_OS, or VISION_OS",
+		"version":   "App Store version to manage",
+	})
 	localizations := mappingValue(root, "localizations")
-	if localizations == nil {
-		return
-	}
 	valueComments := map[string]string{
 		"name":                "App Store display name, up to 30 characters",
 		"subtitle":            "Short summary displayed below the name, up to 30 characters",
@@ -576,10 +586,10 @@ func addSchemaComments(document *yaml.Node) {
 		"privacy_choices_url": "Optional public HTTP(S) privacy choices page",
 	}
 	fileComments := map[string]string{
-		"description":         "Markdown file containing the long app description",
-		"promotional_text":    "Markdown file containing promotional text",
-		"whats_new":           "Markdown file containing release notes",
-		"privacy_policy_text": "Markdown file containing the tvOS privacy policy",
+		"description":         "Required plain-text product description; Markdown is not rendered",
+		"promotional_text":    "Optional plain-text promotion, up to 170 characters",
+		"whats_new":           "Plain-text release notes; required for app updates",
+		"privacy_policy_text": "Required plain-text tvOS privacy policy; TV_OS only",
 	}
 	addMappingComments(mappingValue(root, "metadata"), map[string]string{
 		"copyright":                  "Year and rights holder, for example: 2026 Example, Inc.",
@@ -594,12 +604,52 @@ func addSchemaComments(document *yaml.Node) {
 		"secondary_subcategory_one": "Optional first secondary Games or Stickers subcategory ID",
 		"secondary_subcategory_two": "Optional second secondary Games or Stickers subcategory ID",
 	})
+	addMappingComments(mappingValue(root, "license_agreement"), map[string]string{
+		"file":        "Optional plain-text custom EULA; omit this section to leave it unmanaged",
+		"territories": "App Store territory IDs where the custom EULA applies",
+	})
+	addMappingComments(mappingValue(root, "assets"), map[string]string{
+		"screenshots":         "Managed screenshot root, structured by locale and display type",
+		"app_previews":        "Managed App Preview root, structured by locale and preview type",
+		"preview_frame_times": "Optional poster-frame timecodes keyed by preview-relative path",
+	})
+	availability := mappingValue(root, "availability")
+	addMappingComments(availability, map[string]string{
+		"available_in_new_territories": "Initial setting for territories Apple adds later",
+		"territories":                  "Managed App Store territories; omitted territories remain unmanaged",
+	})
+	if territories := mappingValue(availability, "territories"); territories != nil {
+		for index := 0; index+1 < len(territories.Content); index += 2 {
+			addMappingComments(territories.Content[index+1], map[string]string{
+				"available":         "Whether the app is available in this territory",
+				"release_date":      "Optional release or preorder date in YYYY-MM-DD format",
+				"pre_order_enabled": "Whether preorder is enabled in this territory",
+			})
+		}
+	}
+	pricing := mappingValue(root, "pricing")
+	addMappingComments(pricing, map[string]string{
+		"base_territory":   "Three-letter App Store base territory ID",
+		"scheduled_prices": "Append-only price schedule using App Store price-point IDs",
+	})
+	if scheduledPrices := mappingValue(pricing, "scheduled_prices"); scheduledPrices != nil && scheduledPrices.Kind == yaml.SequenceNode {
+		for _, scheduledPrice := range scheduledPrices.Content {
+			addMappingComments(scheduledPrice, map[string]string{
+				"price_point_id": "App Store Connect price-point ID",
+				"start_date":     "Optional schedule start date in YYYY-MM-DD format",
+				"end_date":       "Optional schedule end date in YYYY-MM-DD format",
+			})
+		}
+	}
 	addMappingComments(mappingValue(root, "age_rating"), ageRatingComments())
 	accessibility := mappingValue(root, "accessibility")
 	if accessibility != nil {
 		for index := 0; index+1 < len(accessibility.Content); index += 2 {
 			addMappingComments(accessibility.Content[index+1], accessibilityComments())
 		}
+	}
+	if localizations == nil {
+		return
 	}
 	for index := 0; index+1 < len(localizations.Content); index += 2 {
 		locale := localizations.Content[index+1]

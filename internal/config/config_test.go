@@ -25,10 +25,38 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"version: \"2\"", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# App Store display name", "# Markdown file containing the long app description"} {
+	for _, expected := range []string{"version: \"2\"", "# ascdir configuration schema version", "# App bundle identifier", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# App Store display name", "# Required plain-text product description; Markdown is not rendered"} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated config is missing %q:\n%s", expected, data)
 		}
+	}
+	if strings.Contains(string(data), "privacy_policy_text:") {
+		t.Fatalf("iOS config unexpectedly manages tvOS privacy policy text:\n%s", data)
+	}
+}
+
+func TestNewIncludesPrivacyPolicyTextOnlyForTVOS(t *testing.T) {
+	t.Parallel()
+	for _, platform := range []string{"IOS", "MAC_OS", "VISION_OS"} {
+		cfg := New("123", "com.example.app", platform, "1.0", []string{"en-US"})
+		if got := cfg.Localizations["en-US"].Files.PrivacyPolicyText; got != "" {
+			t.Errorf("%s privacy policy text path = %q", platform, got)
+		}
+	}
+	cfg := New("123", "com.example.app", "TV_OS", "1.0", []string{"en-US"})
+	if got := cfg.Localizations["en-US"].Files.PrivacyPolicyText; got != "metadata/en-US/privacy_policy.md" {
+		t.Fatalf("TV_OS privacy policy text path = %q", got)
+	}
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "privacy_policy_text: metadata/en-US/privacy_policy.md # Required plain-text tvOS privacy policy; TV_OS only") {
+		t.Fatalf("generated tvOS config lacks the privacy policy explanation:\n%s", data)
 	}
 }
 
@@ -47,6 +75,37 @@ func TestEncodeUpdatedValuesUpdatesLicenseTerritories(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "- JPN") || !strings.Contains(string(data), "- USA") {
 		t.Fatalf("updated config =\n%s", data)
+	}
+}
+
+func TestSaveCommentsOptionalSections(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	availableInNewTerritories := false
+	available := true
+	cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.LicenseAgreement = &LicenseAgreementValues{File: "metadata/license_agreement.md", Territories: []string{"USA"}}
+	cfg.Assets = AssetPaths{Screenshots: "assets/screenshots", AppPreviews: "assets/app-previews", PreviewFrameTimes: map[string]string{"en-US/IPHONE_67/01.mp4": "00:00:05"}}
+	cfg.Availability = &AvailabilityValues{AvailableInNewTerritories: &availableInNewTerritories, Territories: map[string]TerritoryAvailability{"USA": {Available: &available}}}
+	cfg.Pricing = &PricingValues{BaseTerritory: "USA", ScheduledPrices: []ScheduledPrice{{PricePointID: "point-1"}}}
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"# Optional plain-text custom EULA; omit this section to leave it unmanaged",
+		"# Managed screenshot root, structured by locale and display type",
+		"# Initial setting for territories Apple adds later",
+		"# Whether the app is available in this territory",
+		"# Three-letter App Store base territory ID",
+		"# App Store Connect price-point ID",
+	} {
+		if !strings.Contains(string(data), expected) {
+			t.Fatalf("generated optional section comments are missing %q:\n%s", expected, data)
+		}
 	}
 }
 
@@ -178,6 +237,31 @@ localizations:
 	}
 	if len(cfg.AgeRating.Map()) != 0 {
 		t.Fatalf("age rating unexpectedly became managed: %#v", cfg.AgeRating.Map())
+	}
+}
+
+func TestLoadExistingVersionTwoPrivacyPolicyText(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	contents := `version: "2"
+app:
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.0.0
+localizations:
+  en-US:
+    files:
+      privacy_policy_text: metadata/en-US/privacy_policy.md
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Localizations["en-US"].Files.PrivacyPolicyText; got != "metadata/en-US/privacy_policy.md" {
+		t.Fatalf("privacy policy text path = %q", got)
 	}
 }
 
