@@ -68,6 +68,29 @@ func TestEncodeUpdatedValuesUpdatesPreviewFrameTimes(t *testing.T) {
 	}
 }
 
+func TestPricingRoundTripAndDateValidation(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	start := "2026-09-01"
+	cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Pricing = &PricingValues{BaseTerritory: "USA", ScheduledPrices: []ScheduledPrice{{PricePointID: "point-1", StartDate: &start}}}
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Pricing == nil || loaded.Pricing.ScheduledPrices[0].PricePointID != "point-1" {
+		t.Fatalf("pricing = %#v", loaded.Pricing)
+	}
+	invalid := "09/01/2026"
+	loaded.Pricing.ScheduledPrices[0].StartDate = &invalid
+	if err := loaded.Validate(); err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestLoadVersionOneConfiguration(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ascdir.yaml")

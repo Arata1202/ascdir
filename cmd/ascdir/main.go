@@ -127,7 +127,7 @@ Usage:
   ascdir auth check
   ascdir auth logout
   ascdir pull  [--config ascdir.yaml] [--dry-run]
-  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions] [--allow-availability-changes]
+  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions] [--allow-availability-changes] [--allow-commercial-changes]
   ascdir check [--config ascdir.yaml]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
@@ -347,6 +347,7 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	allowIrreversible := fs.Bool("allow-irreversible", false, "allow changes Apple may make irreversible, such as Made for Kids")
 	allowAssetDeletions := fs.Bool("allow-asset-deletions", false, "allow replacing or deleting remote assets")
 	allowAvailabilityChanges := fs.Bool("allow-availability-changes", false, "allow changes that affect App Store availability")
+	allowCommercialChanges := fs.Bool("allow-commercial-changes", false, "allow price changes that affect storefront sales")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -389,6 +390,11 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	if *dryRun {
 		fmt.Fprintf(environment.stdout, "Dry run: %d operation(s) not applied.\n", operationCount)
 		return nil
+	}
+	for _, change := range changes {
+		if change.Field == "pricing.schedule" && !*allowCommercialChanges {
+			return errors.New("the change would modify App Store pricing; review with --dry-run and rerun with --allow-commercial-changes")
+		}
 	}
 	clears := metadata.ClearingChanges(changes)
 	if len(clears) > 0 && !*allowEmpty {
@@ -467,7 +473,7 @@ func requireNoArgs(fs *flag.FlagSet) error {
 }
 
 func fetchOptions(cfg config.Config) appstore.FetchOptions {
-	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != "", Availability: cfg.Availability != nil}
+	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != "", Availability: cfg.Availability != nil, Pricing: cfg.Pricing != nil}
 }
 
 func newClient(stderr io.Writer) (*appstore.Client, error) {

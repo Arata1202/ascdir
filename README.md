@@ -160,6 +160,12 @@ availability:
       available: true
       release_date: "2026-09-01" # Optional YYYY-MM-DD release or preorder date
       pre_order_enabled: false
+pricing:
+  base_territory: USA
+  scheduled_prices:
+    - price_point_id: eyJ...
+      start_date: "2026-09-01"
+      end_date: "2026-12-31"
 localizations:
   en-US:
     values:
@@ -202,6 +208,7 @@ Non-localized fields:
 - App screenshots, including locale, display type, and order
 - App Preview videos, display order, and optional poster-frame timecodes
 - Territory availability, release dates, and preorder settings
+- Base-territory pricing and scheduled price changes
 
 App-level localization fields:
 

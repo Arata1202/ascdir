@@ -30,6 +30,11 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 			result.Values[field] = value
 		}
 	}
+	if cfg.Pricing != nil {
+		for field, value := range cfg.Pricing.Map() {
+			result.Values[field] = value
+		}
+	}
 	for deviceFamily, declaration := range cfg.Accessibility {
 		result.Accessibility[deviceFamily] = appstore.AccessibilityDeclaration{Values: declaration.Map()}
 	}
@@ -261,6 +266,11 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 				updated.Availability.SetManaged(field, remote.Values[field])
 			}
 		}
+		if cfg.Pricing != nil {
+			if err := updated.Pricing.SetManaged(remote.Values["pricing.schedule"]); err != nil {
+				return fmt.Errorf("decode remote pricing schedule: %w", err)
+			}
+		}
 		for deviceFamily, declaration := range cfg.Accessibility {
 			for field, pointer := range declaration.Pointers() {
 				if pointer != nil {
@@ -481,7 +491,7 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 }
 
 func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
-	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, AvailabilityID: source.AvailabilityID, TerritoryAvailabilityIDs: source.TerritoryAvailabilityIDs, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]appstore.Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
+	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, AvailabilityID: source.AvailabilityID, TerritoryAvailabilityIDs: source.TerritoryAvailabilityIDs, PriceScheduleID: source.PriceScheduleID, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]appstore.Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field := range cfg.Metadata.Map() {
 		selected.Values[field] = source.Values[field]
 	}
@@ -500,6 +510,9 @@ func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 		for field := range cfg.Availability.Map() {
 			selected.Values[field] = source.Values[field]
 		}
+	}
+	if cfg.Pricing != nil {
+		selected.Values["pricing.schedule"] = source.Values["pricing.schedule"]
 	}
 	for deviceFamily, declaration := range cfg.Accessibility {
 		values := map[string]string{}
@@ -563,6 +576,8 @@ func PrintChanges(w io.Writer, changes []appstore.Change) {
 				prefix = "age_rating"
 			} else if strings.HasPrefix(change.Field, "availability.") {
 				prefix = "availability"
+			} else if change.Field == "pricing.schedule" {
+				prefix = "pricing"
 			}
 			fmt.Fprintf(w, "%s.%s\n", prefix, change.Field)
 		} else {
