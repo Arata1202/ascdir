@@ -63,6 +63,7 @@ type Asset struct {
 	FileName string
 	Path     string
 	Checksum string
+	Size     int64
 	Content  []byte
 }
 

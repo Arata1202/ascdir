@@ -1,13 +1,13 @@
 package metadata
 
 import (
-	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -70,15 +70,31 @@ func readLocalScreenshots(cfg config.Config, base string) (map[string]map[string
 		if extension != ".png" && extension != ".jpg" && extension != ".jpeg" {
 			return fmt.Errorf("screenshot %s must be PNG or JPEG", relative)
 		}
-		data, err := os.ReadFile(path)
+		file, err := os.Open(path)
 		if err != nil {
 			return err
 		}
-		if _, _, err := image.DecodeConfig(bytes.NewReader(data)); err != nil {
+		if _, _, err := image.DecodeConfig(file); err != nil {
+			file.Close()
 			return fmt.Errorf("decode screenshot %s: %w", relative, err)
 		}
-		sum := md5.Sum(data)
-		asset := appstore.Asset{FileName: entry.Name(), Path: path, Checksum: hex.EncodeToString(sum[:]), Content: data}
+		if _, err := file.Seek(0, 0); err != nil {
+			file.Close()
+			return err
+		}
+		hash := md5.New()
+		if _, err := io.Copy(hash, file); err != nil {
+			file.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		asset := appstore.Asset{FileName: entry.Name(), Path: path, Checksum: hex.EncodeToString(hash.Sum(nil)), Size: info.Size()}
 		if result[locale] == nil {
 			result[locale] = map[string][]appstore.Asset{}
 		}

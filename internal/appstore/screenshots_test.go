@@ -86,3 +86,23 @@ func TestUploadScreenshotCommitsThenOrdersAsset(t *testing.T) {
 		}
 	}
 }
+
+func TestValidatedUploadOperationsRequiresExactCoverage(t *testing.T) {
+	t.Parallel()
+	operation := func(offset, length float64) map[string]any {
+		return map[string]any{"method": "PUT", "url": "https://upload.example.test/asset", "offset": offset, "length": length}
+	}
+	if _, err := validatedUploadOperations([]any{operation(0, 4), operation(4, 6)}, 10); err != nil {
+		t.Fatal(err)
+	}
+	for _, operations := range []any{
+		nil,
+		[]any{},
+		[]any{operation(0, 4), operation(5, 5)},
+		[]any{operation(0, 6), operation(5, 5)},
+	} {
+		if _, err := validatedUploadOperations(operations, 10); err == nil {
+			t.Fatalf("expected validation error for %#v", operations)
+		}
+	}
+}
