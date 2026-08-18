@@ -35,21 +35,23 @@ func WithTimeout(timeout time.Duration) Option {
 }
 
 type Metadata struct {
-	AppID         string
-	AppInfoID     string
-	VersionID     string
-	AgeRatingID   string
-	Accessibility map[string]AccessibilityDeclaration
-	Values        map[string]string
-	Localizations map[string]Localization
+	AppID              string
+	AppInfoID          string
+	VersionID          string
+	AgeRatingID        string
+	LicenseAgreementID string
+	Accessibility      map[string]AccessibilityDeclaration
+	Values             map[string]string
+	Localizations      map[string]Localization
 }
 
 // FetchOptions limits optional App Store Connect resources to the features a
 // configuration manages. This keeps existing projects usable with least-
 // privilege API keys that cannot access newly supported resource families.
 type FetchOptions struct {
-	AgeRating     bool
-	Accessibility bool
+	AgeRating        bool
+	Accessibility    bool
+	LicenseAgreement bool
 }
 
 type Localization struct {
@@ -139,6 +141,11 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	}
 	result := Metadata{AppID: app.ID, Values: map[string]string{}, Accessibility: map[string]AccessibilityDeclaration{}, Localizations: map[string]Localization{}}
 	copyAttributes(result.Values, app.Attributes, appFields)
+	if options.LicenseAgreement {
+		if err := c.fetchLicenseAgreement(ctx, &result); err != nil {
+			return Metadata{}, err
+		}
+	}
 	if options.Accessibility {
 		accessibilityDeclarations, err := c.list(ctx, fmt.Sprintf("/v1/apps/%s/accessibilityDeclarations?limit=200", result.AppID))
 		if err != nil {
@@ -306,6 +313,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		touchedLocales[locale] = true
 	}
 	for _, change := range changes {
+		if change.Locale == "" && change.DeviceFamily == "" && strings.HasPrefix(change.Field, "license_agreement_") {
+			continue
+		}
 		if change.Locale == "" {
 			if change.DeviceFamily != "" {
 				deviceFamily, field := change.DeviceFamily, change.Field
@@ -355,6 +365,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		}
 		grouped[key][change.Field] = change.After
 		touchedLocales[change.Locale] = true
+	}
+	if err := c.applyLicenseAgreementChanges(ctx, remote, changes); err != nil {
+		return err
 	}
 	globalGroups := make([]string, 0, len(global))
 	for group := range global {

@@ -28,6 +28,20 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 		result.Accessibility[deviceFamily] = appstore.AccessibilityDeclaration{Values: declaration.Map()}
 	}
 	base := filepath.Dir(filepath.Clean(configPath))
+	if cfg.LicenseAgreement != nil {
+		for field, value := range cfg.LicenseAgreement.Map() {
+			result.Values[field] = value
+		}
+		fullPath, err := managedPath(base, cfg.LicenseAgreement.File, true)
+		if err != nil {
+			return appstore.Metadata{}, fmt.Errorf("resolve license_agreement.file: %w", err)
+		}
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			return appstore.Metadata{}, fmt.Errorf("read license_agreement.file: %w", err)
+		}
+		result.Values["license_agreement_text"] = strings.TrimSuffix(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+	}
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
 		values := localization.Values.Map()
@@ -73,6 +87,18 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 	}
 	var operations []writeOperation
 	resolvedPaths := map[string]string{}
+	if cfg.LicenseAgreement != nil {
+		fullPath, err := prepareManagedPath(base, cfg.LicenseAgreement.File)
+		if err != nil {
+			return fmt.Errorf("resolve license_agreement.file: %w", err)
+		}
+		value := remote.Values["license_agreement_text"]
+		if value != "" {
+			value += "\n"
+		}
+		resolvedPaths[fullPath] = "license_agreement.file"
+		operations = append(operations, writeOperation{field: "license_agreement", path: fullPath, data: []byte(value)})
+	}
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
 		remoteLocale := remote.Localizations[locale]
@@ -124,6 +150,14 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 				updated.Accessibility = map[string]config.AccessibilityValues{}
 			}
 			updated.Accessibility[deviceFamily] = declaration
+		}
+		if cfg.LicenseAgreement != nil {
+			territories := remote.Values["license_agreement_territories"]
+			if territories == "" {
+				updated.LicenseAgreement.Territories = nil
+			} else {
+				updated.LicenseAgreement.Territories = strings.Split(territories, ",")
+			}
 		}
 		updated.Localizations = make(map[string]config.Localization, len(cfg.Localizations))
 		for locale, localization := range cfg.Localizations {
@@ -309,6 +343,11 @@ func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 	for field := range cfg.AgeRating.Map() {
 		selected.Values[field] = source.Values[field]
 	}
+	if cfg.LicenseAgreement != nil {
+		selected.LicenseAgreementID = source.LicenseAgreementID
+		selected.Values["license_agreement_text"] = source.Values["license_agreement_text"]
+		selected.Values["license_agreement_territories"] = source.Values["license_agreement_territories"]
+	}
 	for deviceFamily, declaration := range cfg.Accessibility {
 		values := map[string]string{}
 		for field := range declaration.Map() {
@@ -399,6 +438,11 @@ func Validate(values appstore.Metadata) []string {
 	}
 	if value, configured := values.Values["content_rights_declaration"]; configured && value != "" && value != "DOES_NOT_USE_THIRD_PARTY_CONTENT" && value != "USES_THIRD_PARTY_CONTENT" {
 		problems = append(problems, "metadata.content_rights_declaration must be DOES_NOT_USE_THIRD_PARTY_CONTENT or USES_THIRD_PARTY_CONTENT")
+	}
+	licenseText, managesLicense := values.Values["license_agreement_text"]
+	licenseTerritories := values.Values["license_agreement_territories"]
+	if managesLicense && (strings.TrimSpace(licenseText) == "") != (strings.TrimSpace(licenseTerritories) == "") {
+		problems = append(problems, "license_agreement requires both non-empty text and at least one territory, or both empty to use Apple's standard EULA")
 	}
 	frequencyValues := map[string]bool{"NONE": true, "INFREQUENT_OR_MILD": true, "FREQUENT_OR_INTENSE": true, "INFREQUENT": true, "FREQUENT": true}
 	for _, field := range ageRatingFrequencyFields() {

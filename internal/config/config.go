@@ -17,13 +17,31 @@ import (
 const CurrentVersion = "2"
 
 type Config struct {
-	Version       string                         `yaml:"version"`
-	App           App                            `yaml:"app"`
-	Metadata      MetadataValues                 `yaml:"metadata,omitempty"`
-	Categories    CategoryValues                 `yaml:"categories,omitempty"`
-	AgeRating     AgeRatingValues                `yaml:"age_rating,omitempty"`
-	Accessibility map[string]AccessibilityValues `yaml:"accessibility,omitempty"`
-	Localizations map[string]Localization        `yaml:"localizations"`
+	Version          string                         `yaml:"version"`
+	App              App                            `yaml:"app"`
+	Metadata         MetadataValues                 `yaml:"metadata,omitempty"`
+	Categories       CategoryValues                 `yaml:"categories,omitempty"`
+	AgeRating        AgeRatingValues                `yaml:"age_rating,omitempty"`
+	Accessibility    map[string]AccessibilityValues `yaml:"accessibility,omitempty"`
+	LicenseAgreement *LicenseAgreementValues        `yaml:"license_agreement,omitempty"`
+	Localizations    map[string]Localization        `yaml:"localizations"`
+}
+
+// LicenseAgreementValues manages an optional custom EULA. Omitting the
+// section leaves Apple's standard EULA untouched.
+type LicenseAgreementValues struct {
+	File        string   `yaml:"file"`
+	Territories []string `yaml:"territories"`
+}
+
+func (v LicenseAgreementValues) Paths() map[string]string {
+	return map[string]string{"license_agreement_text": v.File}
+}
+
+func (v LicenseAgreementValues) Map() map[string]string {
+	territories := append([]string(nil), v.Territories...)
+	sort.Strings(territories)
+	return map[string]string{"license_agreement_territories": strings.Join(territories, ",")}
 }
 
 // AgeRatingValues mirrors Apple's age rating declaration. Pointer values make
@@ -350,6 +368,11 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if cfg.LicenseAgreement != nil {
+		if err := replaceMappingValue(root, "license_agreement", cfg.LicenseAgreement); err != nil {
+			return nil, err
+		}
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
@@ -364,6 +387,26 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 		return nil, fmt.Errorf("encode updated config: %w", err)
 	}
 	return updated, nil
+}
+
+func replaceMappingValue(mapping *yaml.Node, key string, value any) error {
+	var encoded yaml.Node
+	if err := encoded.Encode(value); err != nil {
+		return fmt.Errorf("encode config value %s: %w", key, err)
+	}
+	node := &encoded
+	if encoded.Kind == yaml.DocumentNode && len(encoded.Content) > 0 {
+		node = encoded.Content[0]
+	}
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		if mapping.Content[index].Value == key {
+			node.HeadComment = mapping.Content[index+1].HeadComment
+			mapping.Content[index+1] = node
+			return nil
+		}
+	}
+	mapping.Content = append(mapping.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, node)
+	return nil
 }
 
 func updateScalarMapping(mapping *yaml.Node, label string, values map[string]*string) error {
@@ -487,6 +530,27 @@ func (c Config) Validate() error {
 		}
 	}
 	seen := map[string]string{}
+	if c.LicenseAgreement != nil {
+		path := strings.TrimSpace(c.LicenseAgreement.File)
+		if path == "" {
+			return errors.New("license_agreement.file is required")
+		}
+		clean := filepath.Clean(path)
+		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return errors.New("license_agreement.file must be a relative path inside the project")
+		}
+		seen[clean] = "license_agreement.file"
+		territories := map[string]bool{}
+		for _, territory := range c.LicenseAgreement.Territories {
+			if len(territory) != 3 || territory != strings.ToUpper(territory) {
+				return fmt.Errorf("invalid license agreement territory %q; use an App Store territory ID", territory)
+			}
+			if territories[territory] {
+				return fmt.Errorf("duplicate license agreement territory %q", territory)
+			}
+			territories[territory] = true
+		}
+	}
 	for _, locale := range SortedLocales(c.Localizations) {
 		localization := c.Localizations[locale]
 		if strings.TrimSpace(locale) == "" {

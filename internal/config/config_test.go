@@ -32,6 +32,24 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestEncodeUpdatedValuesUpdatesLicenseTerritories(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.LicenseAgreement = &LicenseAgreementValues{File: "metadata/license.md", Territories: []string{"USA"}}
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg.LicenseAgreement.Territories = []string{"JPN", "USA"}
+	data, err := EncodeUpdatedValues(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "- JPN") || !strings.Contains(string(data), "- USA") {
+		t.Fatalf("updated config =\n%s", data)
+	}
+}
+
 func TestLoadVersionOneConfiguration(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ascdir.yaml")
