@@ -6,20 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-19
+
 ### Added
 
+- Manage version copyright and the app accessibility URL as optional YAML values.
+- Manage the app content rights declaration as an optional YAML value.
+- Manage primary, secondary, Games, and Stickers App Store categories in YAML.
 - Manage the complete App Store age rating declaration, including Made for Kids, with explicit confirmation for potentially irreversible changes.
 - Manage Accessibility Nutrition Label declarations per device family, including explicit publication safeguards.
-- Manage version copyright and the app accessibility URL as optional YAML values
-- Manage the app content rights declaration as an optional YAML value
-- Manage primary, secondary, Games, and Stickers App Store categories in YAML
+- Manage custom end-user license agreement text and its applicable territories.
+- Upload, order, replace, and remove localized App Store screenshots with explicit deletion safeguards.
+- Upload, order, replace, and remove localized App Preview videos, including optional poster-frame timecodes, with explicit deletion safeguards.
+- Manage territory availability, release dates, and preorder settings with explicit confirmation for availability changes.
+- Look up App Store price points and manage base-territory pricing schedules with explicit confirmation for commercial changes.
 
 ### Changed
 
-- Store short localized values directly in version 2 YAML configurations while keeping long-form content in Markdown files
-- Keep version 1 file-per-field configurations fully supported
-- Preserve YAML comments and key order when pulling inline values
-- Validate App Store keywords against Apple's 100-byte limit
+- Store short localized values directly in version 2 YAML configurations while keeping long-form content in Markdown files.
+- Keep version 1 file-per-field configurations fully supported.
+- Preserve YAML comments and key order when pulling inline values.
+- Validate App Store keywords against Apple's 100-byte limit.
 
 ## [1.0.0] - 2026-08-17
 
@@ -35,5 +42,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Install verified release archives with the macOS and Linux installer
 - Retry safe requests after rate limits and transient server failures
 
-[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Arata1202/ascdir/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Arata1202/ascdir/releases/tag/v1.0.0
