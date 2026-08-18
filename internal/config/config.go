@@ -17,13 +17,31 @@ import (
 const CurrentVersion = "2"
 
 type Config struct {
-	Version       string                         `yaml:"version"`
-	App           App                            `yaml:"app"`
-	Metadata      MetadataValues                 `yaml:"metadata,omitempty"`
-	Categories    CategoryValues                 `yaml:"categories,omitempty"`
-	AgeRating     AgeRatingValues                `yaml:"age_rating,omitempty"`
-	Accessibility map[string]AccessibilityValues `yaml:"accessibility,omitempty"`
-	Localizations map[string]Localization        `yaml:"localizations"`
+	Version          string                         `yaml:"version"`
+	App              App                            `yaml:"app"`
+	Metadata         MetadataValues                 `yaml:"metadata,omitempty"`
+	Categories       CategoryValues                 `yaml:"categories,omitempty"`
+	AgeRating        AgeRatingValues                `yaml:"age_rating,omitempty"`
+	Accessibility    map[string]AccessibilityValues `yaml:"accessibility,omitempty"`
+	LicenseAgreement *LicenseAgreementValues        `yaml:"license_agreement,omitempty"`
+	Localizations    map[string]Localization        `yaml:"localizations"`
+}
+
+// LicenseAgreementValues manages an optional custom EULA. Omitting the
+// section leaves Apple's standard EULA untouched.
+type LicenseAgreementValues struct {
+	File        string   `yaml:"file"`
+	Territories []string `yaml:"territories"`
+}
+
+func (v LicenseAgreementValues) Paths() map[string]string {
+	return map[string]string{"license_agreement_text": v.File}
+}
+
+func (v LicenseAgreementValues) Map() map[string]string {
+	territories := append([]string(nil), v.Territories...)
+	sort.Strings(territories)
+	return map[string]string{"license_agreement_territories": strings.Join(territories, ",")}
 }
 
 // AgeRatingValues mirrors Apple's age rating declaration. Pointer values make
@@ -487,6 +505,27 @@ func (c Config) Validate() error {
 		}
 	}
 	seen := map[string]string{}
+	if c.LicenseAgreement != nil {
+		path := strings.TrimSpace(c.LicenseAgreement.File)
+		if path == "" {
+			return errors.New("license_agreement.file is required")
+		}
+		clean := filepath.Clean(path)
+		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return errors.New("license_agreement.file must be a relative path inside the project")
+		}
+		seen[clean] = "license_agreement.file"
+		territories := map[string]bool{}
+		for _, territory := range c.LicenseAgreement.Territories {
+			if len(territory) != 3 || territory != strings.ToUpper(territory) {
+				return fmt.Errorf("invalid license agreement territory %q; use an App Store territory ID", territory)
+			}
+			if territories[territory] {
+				return fmt.Errorf("duplicate license agreement territory %q", territory)
+			}
+			territories[territory] = true
+		}
+	}
 	for _, locale := range SortedLocales(c.Localizations) {
 		localization := c.Localizations[locale]
 		if strings.TrimSpace(locale) == "" {

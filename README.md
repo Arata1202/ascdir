@@ -145,6 +145,9 @@ accessibility:
     published: false # Publishing a declaration cannot be undone
     supports_voiceover: true # The app supports VoiceOver
     supports_larger_text: true # The app supports larger text
+license_agreement:
+  file: metadata/license_agreement.md # Custom EULA text; omit this section to keep the current agreement unmanaged
+  territories: [JPN, USA] # App Store territory IDs where the custom EULA applies
 localizations:
   en-US:
     values:
@@ -183,6 +186,7 @@ Non-localized fields:
 - Games and Stickers subcategories
 - Age rating declaration, including Made for Kids
 - Accessibility Nutrition Labels for each device family
+- Custom end-user license agreement text and territories
 
 App-level localization fields:
 
