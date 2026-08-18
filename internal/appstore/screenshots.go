@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -254,8 +253,4 @@ func (c *Client) performUploadOperation(ctx context.Context, content []byte, ope
 		return fmt.Errorf("upload server returned %s", resp.Status)
 	}
 	return nil
-}
-
-func sortAssets(assets []Asset) {
-	sort.SliceStable(assets, func(i, j int) bool { return assets[i].FileName < assets[j].FileName })
 }
