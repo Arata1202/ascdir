@@ -292,3 +292,14 @@ func TestValidateRejectsEscapingAndDuplicatePaths(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestLicenseAgreementValuesMapsDeterministically(t *testing.T) {
+	t.Parallel()
+	values := LicenseAgreementValues{File: "metadata/license.md", Territories: []string{"USA", "JPN"}}
+	if got := values.Paths()["license_agreement_text"]; got != "metadata/license.md" {
+		t.Fatalf("license agreement path = %q", got)
+	}
+	if got := values.Map()["license_agreement_territories"]; got != "JPN,USA" {
+		t.Fatalf("license agreement territories = %q", got)
+	}
+}
