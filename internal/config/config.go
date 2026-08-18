@@ -24,6 +24,7 @@ type Config struct {
 	AgeRating        AgeRatingValues                `yaml:"age_rating,omitempty"`
 	Accessibility    map[string]AccessibilityValues `yaml:"accessibility,omitempty"`
 	LicenseAgreement *LicenseAgreementValues        `yaml:"license_agreement,omitempty"`
+	Assets           AssetPaths                     `yaml:"assets,omitempty"`
 	Localizations    map[string]Localization        `yaml:"localizations"`
 }
 
@@ -42,6 +43,10 @@ func (v LicenseAgreementValues) Map() map[string]string {
 	territories := append([]string(nil), v.Territories...)
 	sort.Strings(territories)
 	return map[string]string{"license_agreement_territories": strings.Join(territories, ",")}
+}
+
+type AssetPaths struct {
+	Screenshots string `yaml:"screenshots,omitempty"`
 }
 
 // AgeRatingValues mirrors Apple's age rating declaration. Pointer values make
@@ -549,6 +554,12 @@ func (c Config) Validate() error {
 				return fmt.Errorf("duplicate license agreement territory %q", territory)
 			}
 			territories[territory] = true
+		}
+	}
+	if c.Assets.Screenshots != "" {
+		clean := filepath.Clean(c.Assets.Screenshots)
+		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return errors.New("assets.screenshots must be a relative directory inside the project")
 		}
 	}
 	for _, locale := range SortedLocales(c.Localizations) {

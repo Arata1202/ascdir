@@ -41,6 +41,8 @@ type Metadata struct {
 	AgeRatingID        string
 	LicenseAgreementID string
 	Accessibility      map[string]AccessibilityDeclaration
+	Screenshots        map[string]map[string][]Asset
+	ScreenshotSetIDs   map[string]map[string]string
 	Values             map[string]string
 	Localizations      map[string]Localization
 }
@@ -52,6 +54,25 @@ type FetchOptions struct {
 	AgeRating        bool
 	Accessibility    bool
 	LicenseAgreement bool
+	Screenshots      bool
+	DownloadAssets   bool
+}
+
+type Asset struct {
+	ID       string
+	FileName string
+	Path     string
+	Checksum string
+	Content  []byte
+}
+
+type AssetSetChange struct {
+	Kind        string
+	Locale      string
+	DisplayType string
+	SetID       string
+	Before      []Asset
+	After       []Asset
 }
 
 type Localization struct {
@@ -139,7 +160,7 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	if err != nil {
 		return Metadata{}, err
 	}
-	result := Metadata{AppID: app.ID, Values: map[string]string{}, Accessibility: map[string]AccessibilityDeclaration{}, Localizations: map[string]Localization{}}
+	result := Metadata{AppID: app.ID, Values: map[string]string{}, Accessibility: map[string]AccessibilityDeclaration{}, Screenshots: map[string]map[string][]Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, Localizations: map[string]Localization{}}
 	copyAttributes(result.Values, app.Attributes, appFields)
 	if options.LicenseAgreement {
 		if err := c.fetchLicenseAgreement(ctx, &result); err != nil {
@@ -243,6 +264,11 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 		copyAttributes(loc.Values, item.Attributes, versionFields)
 		result.Localizations[locale] = loc
 	}
+	if options.Screenshots {
+		if err := c.fetchScreenshots(ctx, &result, options.DownloadAssets); err != nil {
+			return Metadata{}, err
+		}
+	}
 	return result, nil
 }
 
@@ -316,6 +342,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		if change.Locale == "" && change.DeviceFamily == "" && strings.HasPrefix(change.Field, "license_agreement_") {
 			continue
 		}
+		if change.AssetSet != nil {
+			continue
+		}
 		if change.Locale == "" {
 			if change.DeviceFamily != "" {
 				deviceFamily, field := change.DeviceFamily, change.Field
@@ -367,6 +396,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		touchedLocales[change.Locale] = true
 	}
 	if err := c.applyLicenseAgreementChanges(ctx, remote, changes); err != nil {
+		return err
+	}
+	if err := c.applyScreenshotChanges(ctx, changes); err != nil {
 		return err
 	}
 	globalGroups := make([]string, 0, len(global))
@@ -500,6 +532,7 @@ type Change struct {
 	Field        string
 	Before       string
 	After        string
+	AssetSet     *AssetSetChange
 }
 
 func fieldGroup(field string) (string, bool) {

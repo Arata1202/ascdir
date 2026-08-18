@@ -148,6 +148,8 @@ accessibility:
 license_agreement:
   file: metadata/license_agreement.md # Custom EULA text; omit this section to keep the current agreement unmanaged
   territories: [JPN, USA] # App Store territory IDs where the custom EULA applies
+assets:
+  screenshots: assets/screenshots # <locale>/<display-type>/<ordered image files>
 localizations:
   en-US:
     values:
@@ -187,6 +189,7 @@ Non-localized fields:
 - Age rating declaration, including Made for Kids
 - Accessibility Nutrition Labels for each device family
 - Custom end-user license agreement text and territories
+- App screenshots, including locale, display type, and order
 
 App-level localization fields:
 
