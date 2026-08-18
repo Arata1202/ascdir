@@ -20,9 +20,9 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 	result := appstore.Metadata{AppID: cfg.App.ID, Localizations: map[string]appstore.Localization{}}
 	base := filepath.Dir(filepath.Clean(configPath))
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
-		files := cfg.Localizations[locale]
-		values := map[string]string{}
-		paths := files.Paths()
+		localization := cfg.Localizations[locale]
+		values := localization.Values.Map()
+		paths := localization.Paths()
 		for _, field := range sortedFields(paths) {
 			path := paths[field]
 			if path == "" {
@@ -44,6 +44,17 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 }
 
 func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) error {
+	return writeLocal(cfg, configPath, remote, false)
+}
+
+// WriteLocalNew writes a newly initialized project. Unlike pull, init owns the
+// complete configuration and intentionally replaces any file accepted through
+// --force instead of attempting to preserve its previous schema or comments.
+func WriteLocalNew(cfg config.Config, configPath string, remote appstore.Metadata) error {
+	return writeLocal(cfg, configPath, remote, true)
+}
+
+func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, replaceConfig bool) error {
 	base := filepath.Dir(filepath.Clean(configPath))
 	type writeOperation struct {
 		locale string
@@ -54,9 +65,9 @@ func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) 
 	var operations []writeOperation
 	resolvedPaths := map[string]string{}
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
-		files := cfg.Localizations[locale]
+		localization := cfg.Localizations[locale]
 		remoteLocale := remote.Localizations[locale]
-		paths := files.Paths()
+		paths := localization.Paths()
 		for _, field := range sortedFields(paths) {
 			path := paths[field]
 			if path == "" {
@@ -77,6 +88,29 @@ func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) 
 			operations = append(operations, writeOperation{locale: locale, field: field, path: fullPath, data: []byte(value)})
 		}
 	}
+	if cfg.Version == config.CurrentVersion {
+		updated := cfg
+		updated.Localizations = make(map[string]config.Localization, len(cfg.Localizations))
+		for locale, localization := range cfg.Localizations {
+			for field, pointer := range localization.Values.Pointers() {
+				if pointer != nil {
+					localization.Values.SetManaged(field, remote.Localizations[locale].Values[field])
+				}
+			}
+			updated.Localizations[locale] = localization
+		}
+		var data []byte
+		var err error
+		if replaceConfig {
+			data, err = config.Encode(updated)
+		} else {
+			data, err = config.EncodeUpdatedValues(configPath, updated)
+		}
+		if err != nil {
+			return fmt.Errorf("encode configuration: %w", err)
+		}
+		operations = append(operations, writeOperation{field: "configuration", path: filepath.Clean(configPath), data: data})
+	}
 	// Resolve, validate, and fully stage every destination before replacing any
 	// files. This prevents configuration, permission, and write errors from
 	// modifying the existing metadata tree. Each replacement remains atomic.
@@ -89,6 +123,9 @@ func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) 
 	for _, operation := range operations {
 		file, err := atomicfile.Prepare(operation.path, operation.data, 0o644)
 		if err != nil {
+			if operation.locale == "" {
+				return fmt.Errorf("write %s: %w", operation.field, err)
+			}
 			return fmt.Errorf("write %s.%s: %w", operation.locale, operation.field, err)
 		}
 		pending = append(pending, file)
@@ -96,6 +133,9 @@ func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) 
 	for index, file := range pending {
 		if err := file.Commit(); err != nil {
 			operation := operations[index]
+			if operation.locale == "" {
+				return fmt.Errorf("write %s: %w", operation.field, err)
+			}
 			return fmt.Errorf("write %s.%s: %w", operation.locale, operation.field, err)
 		}
 	}
@@ -197,9 +237,12 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 
 func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, Localizations: map[string]appstore.Localization{}}
-	for locale, files := range cfg.Localizations {
+	for locale, localization := range cfg.Localizations {
 		values := map[string]string{}
-		for field, path := range files.Paths() {
+		for field := range localization.Values.Map() {
+			values[field] = source.Localizations[locale].Values[field]
+		}
+		for field, path := range localization.Paths() {
 			if path != "" {
 				values[field] = source.Localizations[locale].Values[field]
 			}
@@ -249,7 +292,7 @@ func sortedFields(paths map[string]string) []string {
 func Validate(values appstore.Metadata) []string {
 	limits := map[string]int{
 		"name": 30, "subtitle": 30, "description": 4000,
-		"keywords": 100, "promotional_text": 170, "whats_new": 4000,
+		"promotional_text": 170, "whats_new": 4000,
 	}
 	urlFields := map[string]bool{"support_url": true, "marketing_url": true, "privacy_policy_url": true, "privacy_choices_url": true}
 	var problems []string
@@ -265,6 +308,9 @@ func Validate(values appstore.Metadata) []string {
 			if length > limit {
 				problems = append(problems, fmt.Sprintf("%s.%s is %d characters; maximum is %d", locale, field, length, limit))
 			}
+		}
+		if value, configured := fields["keywords"]; configured && len([]byte(value)) > 100 {
+			problems = append(problems, fmt.Sprintf("%s.keywords is %d bytes; maximum is 100", locale, len([]byte(value))))
 		}
 		for field := range urlFields {
 			value, configured := fields[field]

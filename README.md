@@ -1,10 +1,10 @@
 # ascdir
 
-`ascdir` manages App Store Connect text metadata as local files. It lets teams review localized store content in Git, pull the current values, validate them locally, and push only the fields that changed.
+`ascdir` manages App Store Connect text metadata as reviewable YAML and Markdown. It lets teams review localized store content in Git, pull the current values, validate them locally, and push only the fields that changed.
 
 ## Features
 
-- Store localized metadata in plain text and Markdown files
+- Keep short values in self-documenting YAML and long-form content in Markdown
 - Pull existing metadata from App Store Connect
 - Preview exact changes before writing with `push --dry-run`
 - Protect non-empty remote fields from accidental clearing
@@ -93,9 +93,9 @@ ascdir init \
   --version 1.2.0
 ```
 
-This creates `ascdir.yaml` and downloads the configured localization files under `metadata/`.
+This creates `ascdir.yaml` with short metadata values and downloads long-form content under `metadata/`.
 
-Edit the files, validate them, and preview the remote changes:
+Edit the YAML or Markdown files, validate them, and preview the remote changes:
 
 ```sh
 ascdir check
@@ -108,7 +108,7 @@ Apply the changes:
 ascdir push
 ```
 
-To replace local files with the current App Store Connect values:
+To replace managed local values with the current App Store Connect values:
 
 ```sh
 ascdir pull --dry-run
@@ -118,7 +118,7 @@ ascdir pull
 ## Configuration
 
 ```yaml
-version: "1"
+version: "2"
 app:
   id: "123456789"
   bundle_id: com.example.myapp
@@ -126,22 +126,28 @@ app:
   version: 1.2.0
 localizations:
   en-US:
-    name: metadata/en-US/name.txt
-    subtitle: metadata/en-US/subtitle.txt
-    description: metadata/en-US/description.md
-    keywords: metadata/en-US/keywords.txt
-    promotional_text: metadata/en-US/promotional_text.txt
-    whats_new: metadata/en-US/whats_new.md
-    support_url: metadata/en-US/support_url.txt
-    marketing_url: metadata/en-US/marketing_url.txt
-    privacy_policy_url: metadata/en-US/privacy_policy_url.txt
-    privacy_choices_url: metadata/en-US/privacy_choices_url.txt
-    privacy_policy_text: metadata/en-US/privacy_policy.md
+    values:
+      name: Example App # App Store display name, up to 30 characters
+      subtitle: A concise summary # Short summary displayed below the name, up to 30 characters
+      keywords: example,productivity # Comma-separated search keywords, up to 100 bytes
+      support_url: https://example.com/support # Public HTTP(S) support page
+      marketing_url: https://example.com # Optional public HTTP(S) marketing page
+      privacy_policy_url: https://example.com/privacy # Public HTTP(S) privacy policy
+      privacy_choices_url: "" # Optional public HTTP(S) privacy choices page
+    files:
+      description: metadata/en-US/description.md # Markdown file containing the long app description
+      promotional_text: metadata/en-US/promotional_text.md # Markdown file containing promotional text
+      whats_new: metadata/en-US/whats_new.md # Markdown file containing release notes
+      privacy_policy_text: metadata/en-US/privacy_policy.md # Markdown file containing the tvOS privacy policy
 ```
 
-Paths are relative to the directory containing `ascdir.yaml`. Set a field path to an empty string or remove it to leave that field unmanaged.
+Short, single-line values live under `values`, where the key and generated inline comment describe the expected input. Long-form values live in files referenced under `files`. Paths are relative to the directory containing `ascdir.yaml`.
 
-Unknown configuration keys are rejected so misspelled fields cannot be silently ignored. Metadata files are replaced atomically to avoid partially written files.
+Remove a key to leave that field unmanaged. An explicitly empty value remains managed and represents a request to clear the remote field; `push` still requires `--allow-empty` when the remote value is non-empty.
+
+Version 1 configurations remain fully supported. Existing projects can continue using one file per field without modification; newly initialized projects use version 2. To migrate manually, move short values into `values`, keep long-form paths under `files`, and change `version` to `"2"`.
+
+Unknown configuration keys are rejected so misspelled fields cannot be silently ignored. During `pull`, ascdir updates only the managed YAML value nodes, preserving user comments and key order. The configuration and metadata files are staged before any destination is replaced, and each replacement is atomic.
 
 Supported platforms are `IOS`, `MAC_OS`, `TV_OS`, and `VISION_OS`.
 
@@ -181,11 +187,11 @@ Finds an existing app and version, generates the configuration, and pulls its lo
 
 ### `ascdir pull`
 
-Downloads configured fields. Local edits are overwritten, so commit or review them first. Use `pull --dry-run` to preview the local differences without writing files.
+Downloads configured fields into `ascdir.yaml` and the referenced Markdown files. Local edits are overwritten, so commit or review them first. Use `pull --dry-run` to preview the local differences without writing files.
 
 ### `ascdir push`
 
-Validates and compares local files with App Store Connect, then updates only changed resources. Use `--dry-run` to inspect changes without writing.
+Validates and compares local YAML and Markdown with App Store Connect, then updates only changed resources. Use `--dry-run` to inspect changes without writing.
 
 Clearing a non-empty remote field requires the explicit `--allow-empty` flag:
 

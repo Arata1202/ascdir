@@ -119,7 +119,7 @@ func versionString() string {
 }
 
 func usage(writer io.Writer) {
-	fmt.Fprint(writer, `ascdir manages App Store Connect metadata as local files.
+	fmt.Fprint(writer, `ascdir manages App Store Connect metadata as YAML and Markdown.
 
 Usage:
   ascdir init  --bundle-id ID --version VERSION [--platform IOS] [--locale en-US]
@@ -276,10 +276,7 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 		locales = []string{normalizedLocale}
 	}
 	cfg := config.New(remote.AppID, normalizedBundleID, normalizedPlatform, normalizedVersion, locales)
-	if err := config.Save(*configPath, cfg); err != nil {
-		return err
-	}
-	if err := metadata.WriteLocal(cfg, *configPath, remote); err != nil {
+	if err := metadata.WriteLocalNew(cfg, *configPath, remote); err != nil {
 		return err
 	}
 	fmt.Fprintf(environment.stdout, "Created %s with %d localization(s).\n", *configPath, len(locales))
@@ -289,7 +286,7 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 func runPull(ctx context.Context, args []string, environment commandEnvironment) error {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
 	configPath := fs.String("config", "ascdir.yaml", "configuration file")
-	dryRun := fs.Bool("dry-run", false, "show changes without overwriting local files")
+	dryRun := fs.Bool("dry-run", false, "show changes without overwriting local metadata")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
