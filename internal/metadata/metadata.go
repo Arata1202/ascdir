@@ -17,7 +17,7 @@ import (
 )
 
 func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) {
-	result := appstore.Metadata{AppID: cfg.App.ID, Localizations: map[string]appstore.Localization{}}
+	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Localizations: map[string]appstore.Localization{}}
 	base := filepath.Dir(filepath.Clean(configPath))
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
@@ -90,6 +90,11 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 	}
 	if cfg.Version == config.CurrentVersion {
 		updated := cfg
+		for field, pointer := range cfg.Metadata.Pointers() {
+			if pointer != nil {
+				updated.Metadata.SetManaged(field, remote.Values[field])
+			}
+		}
 		updated.Localizations = make(map[string]config.Localization, len(cfg.Localizations))
 		for locale, localization := range cfg.Localizations {
 			for field, pointer := range localization.Values.Pointers() {
@@ -213,6 +218,16 @@ func ensureWithin(base, path string) error {
 
 func Diff(desired, remote appstore.Metadata) []appstore.Change {
 	var changes []appstore.Change
+	globalFields := make([]string, 0, len(desired.Values))
+	for field := range desired.Values {
+		globalFields = append(globalFields, field)
+	}
+	sort.Strings(globalFields)
+	for _, field := range globalFields {
+		if desired.Values[field] != remote.Values[field] {
+			changes = append(changes, appstore.Change{Field: field, Before: remote.Values[field], After: desired.Values[field]})
+		}
+	}
 	locales := make([]string, 0, len(desired.Localizations))
 	for locale := range desired.Localizations {
 		locales = append(locales, locale)
@@ -236,7 +251,10 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 }
 
 func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
-	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, Localizations: map[string]appstore.Localization{}}
+	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
+	for field := range cfg.Metadata.Map() {
+		selected.Values[field] = source.Values[field]
+	}
 	for locale, localization := range cfg.Localizations {
 		values := map[string]string{}
 		for field := range localization.Values.Map() {
@@ -264,7 +282,11 @@ func ClearingChanges(changes []appstore.Change) []appstore.Change {
 
 func PrintChanges(w io.Writer, changes []appstore.Change) {
 	for _, change := range changes {
-		fmt.Fprintf(w, "%s.%s\n", change.Locale, change.Field)
+		if change.Locale == "" {
+			fmt.Fprintf(w, "metadata.%s\n", change.Field)
+		} else {
+			fmt.Fprintf(w, "%s.%s\n", change.Locale, change.Field)
+		}
 		fmt.Fprintf(w, "- %s\n", summarize(change.Before))
 		fmt.Fprintf(w, "+ %s\n", summarize(change.After))
 	}
@@ -296,6 +318,12 @@ func Validate(values appstore.Metadata) []string {
 	}
 	urlFields := map[string]bool{"support_url": true, "marketing_url": true, "privacy_policy_url": true, "privacy_choices_url": true}
 	var problems []string
+	if value, configured := values.Values["copyright"]; configured && strings.TrimSpace(value) == "" {
+		problems = append(problems, "metadata.copyright is empty")
+	}
+	if value, configured := values.Values["accessibility_url"]; configured && value != "" && !validHTTPURL(value) {
+		problems = append(problems, "metadata.accessibility_url is not a valid HTTP(S) URL")
+	}
 	locales := values.Locales()
 	for _, locale := range locales {
 		fields := values.Localizations[locale].Values
@@ -317,8 +345,7 @@ func Validate(values appstore.Metadata) []string {
 			if !configured || value == "" {
 				continue
 			}
-			parsed, err := url.ParseRequestURI(value)
-			if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+			if !validHTTPURL(value) {
 				problems = append(problems, fmt.Sprintf("%s.%s is not a valid HTTP(S) URL", locale, field))
 			}
 		}
@@ -334,4 +361,9 @@ func Validate(values appstore.Metadata) []string {
 	}
 	sort.Strings(problems)
 	return problems
+}
+
+func validHTTPURL(value string) bool {
+	parsed, err := url.ParseRequestURI(value)
+	return err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != ""
 }

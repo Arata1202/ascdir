@@ -18,6 +18,7 @@ const CurrentVersion = "2"
 type Config struct {
 	Version       string                  `yaml:"version"`
 	App           App                     `yaml:"app"`
+	Metadata      MetadataValues          `yaml:"metadata,omitempty"`
 	Localizations map[string]Localization `yaml:"localizations"`
 }
 
@@ -26,6 +27,14 @@ type App struct {
 	BundleID string `yaml:"bundle_id"`
 	Platform string `yaml:"platform"`
 	Version  string `yaml:"version"`
+}
+
+// MetadataValues contains non-localized, single-value metadata. Pointers
+// distinguish an unmanaged field from a managed field whose desired value is
+// empty.
+type MetadataValues struct {
+	Copyright        *string `yaml:"copyright,omitempty"`
+	AccessibilityURL *string `yaml:"accessibility_url,omitempty"`
 }
 
 // Localization keeps short scalar values in YAML and long-form content in
@@ -78,8 +87,12 @@ type configV1 struct {
 
 func New(appID, bundleID, platform, version string, locales []string) Config {
 	cfg := Config{
-		Version:       CurrentVersion,
-		App:           App{ID: appID, BundleID: bundleID, Platform: platform, Version: version},
+		Version: CurrentVersion,
+		App:     App{ID: appID, BundleID: bundleID, Platform: platform, Version: version},
+		Metadata: MetadataValues{
+			Copyright:        stringPointer(""),
+			AccessibilityURL: stringPointer(""),
+		},
 		Localizations: make(map[string]Localization, len(locales)),
 	}
 	for _, locale := range locales {
@@ -263,28 +276,16 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 	if localizations == nil {
 		return nil, errors.New("update config: localizations mapping is missing")
 	}
+	if err := updateScalarMapping(mappingValue(root, "metadata"), "metadata", cfg.Metadata.Pointers()); err != nil {
+		return nil, err
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
 			return nil, fmt.Errorf("update config: localization %q is missing", locale)
 		}
-		valuesNode := mappingValue(localeNode, "values")
-		for field, pointer := range cfg.Localizations[locale].Values.Pointers() {
-			if pointer == nil {
-				continue
-			}
-			if valuesNode == nil {
-				return nil, fmt.Errorf("update config: %s.values mapping is missing", locale)
-			}
-			valueNode := mappingValue(valuesNode, field)
-			if valueNode == nil {
-				return nil, fmt.Errorf("update config: managed field %s.values.%s is missing", locale, field)
-			}
-			if valueNode.Kind != yaml.ScalarNode {
-				return nil, fmt.Errorf("update config: managed field %s.values.%s is not a scalar", locale, field)
-			}
-			valueNode.Value = *pointer
-			valueNode.Tag = "!!str"
+		if err := updateScalarMapping(mappingValue(localeNode, "values"), locale+".values", cfg.Localizations[locale].Values.Pointers()); err != nil {
+			return nil, err
 		}
 	}
 	updated, err := yaml.Marshal(&document)
@@ -292,6 +293,27 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 		return nil, fmt.Errorf("encode updated config: %w", err)
 	}
 	return updated, nil
+}
+
+func updateScalarMapping(mapping *yaml.Node, label string, values map[string]*string) error {
+	for field, pointer := range values {
+		if pointer == nil {
+			continue
+		}
+		if mapping == nil {
+			return fmt.Errorf("update config: %s mapping is missing", label)
+		}
+		valueNode := mappingValue(mapping, field)
+		if valueNode == nil {
+			return fmt.Errorf("update config: managed field %s.%s is missing", label, field)
+		}
+		if valueNode.Kind != yaml.ScalarNode {
+			return fmt.Errorf("update config: managed field %s.%s is not a scalar", label, field)
+		}
+		valueNode.Value = *pointer
+		valueNode.Tag = "!!str"
+	}
+	return nil
 }
 
 func addSchemaComments(document *yaml.Node) {
@@ -318,6 +340,10 @@ func addSchemaComments(document *yaml.Node) {
 		"whats_new":           "Markdown file containing release notes",
 		"privacy_policy_text": "Markdown file containing the tvOS privacy policy",
 	}
+	addMappingComments(mappingValue(root, "metadata"), map[string]string{
+		"copyright":         "Year and rights holder, for example: 2026 Example, Inc.",
+		"accessibility_url": "Optional public HTTP(S) accessibility information page",
+	})
 	for index := 0; index+1 < len(localizations.Content); index += 2 {
 		locale := localizations.Content[index+1]
 		addMappingComments(mappingValue(locale, "values"), valueComments)
@@ -447,6 +473,33 @@ func (v *LocaleValues) SetManaged(field, value string) {
 		v.PrivacyPolicyURL = pointer
 	case "privacy_choices_url":
 		v.PrivacyChoicesURL = pointer
+	}
+}
+
+func (v MetadataValues) Map() map[string]string {
+	result := map[string]string{}
+	for field, value := range v.Pointers() {
+		if value != nil {
+			result[field] = *value
+		}
+	}
+	return result
+}
+
+func (v MetadataValues) Pointers() map[string]*string {
+	return map[string]*string{
+		"copyright":         v.Copyright,
+		"accessibility_url": v.AccessibilityURL,
+	}
+}
+
+func (v *MetadataValues) SetManaged(field, value string) {
+	pointer := stringPointer(value)
+	switch field {
+	case "copyright":
+		v.Copyright = pointer
+	case "accessibility_url":
+		v.AccessibilityURL = pointer
 	}
 }
 

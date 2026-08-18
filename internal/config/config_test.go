@@ -25,7 +25,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"version: \"2\"", "values:", "files:", "# App Store display name", "# Markdown file containing the long app description"} {
+	for _, expected := range []string{"version: \"2\"", "metadata:", "copyright:", "accessibility_url:", "values:", "files:", "# App Store display name", "# Markdown file containing the long app description"} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated config is missing %q:\n%s", expected, data)
 		}
@@ -91,6 +91,31 @@ localizations:
 	}
 }
 
+func TestLoadVersionTwoWithoutMetadataLeavesFieldsUnmanaged(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	contents := `version: "2"
+app:
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.0.0
+localizations:
+  en-US:
+    values:
+      name: Example
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Metadata.Map()) != 0 {
+		t.Fatalf("metadata unexpectedly became managed: %#v", cfg.Metadata.Map())
+	}
+}
+
 func TestEncodeUpdatedValuesPreservesCommentsAndKeyOrder(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ascdir.yaml")
@@ -100,6 +125,8 @@ app:
   bundle_id: com.example.app
   platform: IOS
   version: 1.0.0
+metadata:
+  copyright: 2025 Example, Inc. # custom copyright comment
 localizations:
   en-US: # locale comment
     values:
@@ -117,12 +144,13 @@ localizations:
 	localization := cfg.Localizations["en-US"]
 	localization.Values.SetManaged("name", "After")
 	cfg.Localizations["en-US"] = localization
+	cfg.Metadata.SetManaged("copyright", "2026 Example, Inc.")
 	updated, err := EncodeUpdatedValues(path, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(updated)
-	for _, expected := range []string{"# project comment", "# locale comment", "name: After # custom name comment"} {
+	for _, expected := range []string{"# project comment", "# locale comment", "copyright: 2026 Example, Inc. # custom copyright comment", "name: After # custom name comment"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("updated config is missing %q:\n%s", expected, text)
 		}

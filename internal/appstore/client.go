@@ -38,6 +38,7 @@ type Metadata struct {
 	AppID         string
 	AppInfoID     string
 	VersionID     string
+	Values        map[string]string
 	Localizations map[string]Localization
 }
 
@@ -111,14 +112,15 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	if err != nil {
 		return Metadata{}, err
 	}
-	result := Metadata{AppID: app.ID, Localizations: map[string]Localization{}}
+	result := Metadata{AppID: app.ID, Values: map[string]string{}, Localizations: map[string]Localization{}}
+	copyAttributes(result.Values, app.Attributes, appFields)
 
 	infos, err := c.list(ctx, fmt.Sprintf("/v1/apps/%s/appInfos?fields%%5BappInfos%%5D=state&limit=10", result.AppID))
 	if err != nil {
 		return Metadata{}, err
 	}
 
-	versionsPath := fmt.Sprintf("/v1/apps/%s/appStoreVersions?filter%%5Bplatform%%5D=%s&filter%%5BversionString%%5D=%s&fields%%5BappStoreVersions%%5D=appVersionState&limit=2", result.AppID, url.QueryEscape(platform), url.QueryEscape(version))
+	versionsPath := fmt.Sprintf("/v1/apps/%s/appStoreVersions?filter%%5Bplatform%%5D=%s&filter%%5BversionString%%5D=%s&fields%%5BappStoreVersions%%5D=appVersionState,copyright&limit=2", result.AppID, url.QueryEscape(platform), url.QueryEscape(version))
 	versions, err := c.list(ctx, versionsPath)
 	if err != nil {
 		return Metadata{}, err
@@ -130,6 +132,7 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 		return Metadata{}, fmt.Errorf("multiple versions matched %s for platform %s", version, platform)
 	}
 	result.VersionID = versions[0].ID
+	copyAttributes(result.Values, versions[0].Attributes, appStoreVersionFields)
 	appInfo, err := selectAppInfo(infos, stringAttribute(versions[0], "appVersionState"))
 	if err != nil {
 		return Metadata{}, err
@@ -199,6 +202,14 @@ var infoFields = map[string]string{
 	"privacy_policy_text": "privacyPolicyText",
 }
 
+var appFields = map[string]string{
+	"accessibility_url": "accessibilityUrl",
+}
+
+var appStoreVersionFields = map[string]string{
+	"copyright": "copyright",
+}
+
 var versionFields = map[string]string{
 	"description":      "description",
 	"keywords":         "keywords",
@@ -210,11 +221,27 @@ var versionFields = map[string]string{
 
 func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []string, changes []Change) error {
 	grouped := map[string]map[string]string{}
+	global := map[string]map[string]any{}
 	touchedLocales := map[string]bool{}
 	for _, locale := range locales {
 		touchedLocales[locale] = true
 	}
 	for _, change := range changes {
+		if change.Locale == "" {
+			group, fields, ok := globalFieldGroup(change.Field)
+			if !ok {
+				return fmt.Errorf("unsupported metadata field %q", change.Field)
+			}
+			if global[group] == nil {
+				global[group] = map[string]any{}
+			}
+			value := any(change.After)
+			if change.Field == "accessibility_url" && change.After == "" {
+				value = nil
+			}
+			global[group][fields[change.Field]] = value
+			continue
+		}
 		group, ok := fieldGroup(change.Field)
 		if !ok {
 			return fmt.Errorf("unsupported metadata field %q", change.Field)
@@ -225,6 +252,23 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		}
 		grouped[key][change.Field] = change.After
 		touchedLocales[change.Locale] = true
+	}
+	globalGroups := make([]string, 0, len(global))
+	for group := range global {
+		globalGroups = append(globalGroups, group)
+	}
+	sort.Strings(globalGroups)
+	for index, group := range globalGroups {
+		resourceType, resourceID := "apps", remote.AppID
+		if group == "app_store_version" {
+			resourceType, resourceID = "appStoreVersions", remote.VersionID
+		}
+		if err := c.patchResource(ctx, resourceType, resourceID, global[group]); err != nil {
+			if index == 0 {
+				return fmt.Errorf("apply %s metadata: %w", group, err)
+			}
+			return fmt.Errorf("apply %s metadata after %d successful request(s): %w", group, index, err)
+		}
 	}
 	// Apple requires app-info and version localizations to contain the same
 	// locale set. Add an empty group when necessary so a touched locale is
@@ -268,10 +312,10 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		if resourceID == "" {
 			attributes["locale"] = locale
 			if err := c.createLocalization(ctx, resourceType, parentType, parentID, attributes); err != nil {
-				return applyLocalizationError(locale, group, index, err)
+				return applyLocalizationError(locale, group, len(globalGroups)+index, err)
 			}
-		} else if err := c.patchLocalization(ctx, resourceType, resourceID, attributes); err != nil {
-			return applyLocalizationError(locale, group, index, err)
+		} else if err := c.patchResource(ctx, resourceType, resourceID, attributes); err != nil {
+			return applyLocalizationError(locale, group, len(globalGroups)+index, err)
 		}
 	}
 	return nil
@@ -302,7 +346,7 @@ func MissingLocalizationResources(remote Metadata, locales []string) []string {
 func (c *Client) resolveApp(ctx context.Context, appID, bundleID string) (resource, error) {
 	if appID != "" {
 		var response singleResponse
-		if err := c.doJSON(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(appID)+"?fields%5Bapps%5D=bundleId", nil, &response); err != nil {
+		if err := c.doJSON(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(appID)+"?fields%5Bapps%5D=bundleId,accessibilityUrl", nil, &response); err != nil {
 			return resource{}, err
 		}
 		if actual := stringAttribute(response.Data, "bundleId"); actual != "" && actual != bundleID {
@@ -310,7 +354,7 @@ func (c *Client) resolveApp(ctx context.Context, appID, bundleID string) (resour
 		}
 		return response.Data, nil
 	}
-	apps, err := c.list(ctx, "/v1/apps?filter%5BbundleId%5D="+url.QueryEscape(bundleID)+"&fields%5Bapps%5D=bundleId&limit=2")
+	apps, err := c.list(ctx, "/v1/apps?filter%5BbundleId%5D="+url.QueryEscape(bundleID)+"&fields%5Bapps%5D=bundleId,accessibilityUrl&limit=2")
 	if err != nil {
 		return resource{}, err
 	}
@@ -340,6 +384,16 @@ func fieldGroup(field string) (string, bool) {
 	return "", false
 }
 
+func globalFieldGroup(field string) (string, map[string]string, bool) {
+	if _, ok := appFields[field]; ok {
+		return "app", appFields, true
+	}
+	if _, ok := appStoreVersionFields[field]; ok {
+		return "app_store_version", appStoreVersionFields, true
+	}
+	return "", nil, false
+}
+
 func (c *Client) createLocalization(ctx context.Context, resourceType, parentType, parentID string, attributes map[string]string) error {
 	body := map[string]any{"data": map[string]any{
 		"type": resourceType, "attributes": attributes,
@@ -348,7 +402,7 @@ func (c *Client) createLocalization(ctx context.Context, resourceType, parentTyp
 	return c.doJSON(ctx, http.MethodPost, "/v1/"+resourceType, body, nil)
 }
 
-func (c *Client) patchLocalization(ctx context.Context, resourceType, resourceID string, attributes map[string]string) error {
+func (c *Client) patchResource(ctx context.Context, resourceType, resourceID string, attributes any) error {
 	body := map[string]any{"data": map[string]any{"type": resourceType, "id": resourceID, "attributes": attributes}}
 	return c.doJSON(ctx, http.MethodPatch, "/v1/"+resourceType+"/"+resourceID, body, nil)
 }

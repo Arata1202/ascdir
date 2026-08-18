@@ -17,6 +17,7 @@ import (
 func TestFetchAndApplyMetadata(t *testing.T) {
 	t.Parallel()
 	var mutations []map[string]any
+	var mutationPaths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 			t.Error("missing bearer token")
@@ -24,16 +25,17 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps":
-			writeData(t, w, []any{resourceJSON("app-1", "apps", map[string]any{"bundleId": "com.example.app"})})
+			writeData(t, w, []any{resourceJSON("app-1", "apps", map[string]any{"bundleId": "com.example.app", "accessibilityUrl": "https://example.com/accessibility"})})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/app-1/appInfos":
 			writeData(t, w, []any{resourceJSON("info-1", "appInfos", nil)})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/appInfos/info-1/appInfoLocalizations":
 			writeData(t, w, []any{resourceJSON("info-loc-1", "appInfoLocalizations", map[string]any{"locale": "en-US", "name": "Old Name", "subtitle": "Subtitle", "privacyPolicyUrl": "https://example.com/privacy"})})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/app-1/appStoreVersions":
-			writeData(t, w, []any{resourceJSON("version-1", "appStoreVersions", nil)})
+			writeData(t, w, []any{resourceJSON("version-1", "appStoreVersions", map[string]any{"copyright": "2025 Example, Inc."})})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/appStoreVersions/version-1/appStoreVersionLocalizations":
 			writeData(t, w, []any{resourceJSON("version-loc-1", "appStoreVersionLocalizations", map[string]any{"locale": "en-US", "description": "Old description", "supportUrl": "https://example.com/support"})})
 		case r.Method == http.MethodPatch:
+			mutationPaths = append(mutationPaths, r.URL.Path)
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
@@ -57,15 +59,26 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	if got := remote.Localizations["en-US"].Values["description"]; got != "Old description" {
 		t.Fatalf("description = %q", got)
 	}
+	if remote.Values["copyright"] != "2025 Example, Inc." || remote.Values["accessibility_url"] != "https://example.com/accessibility" {
+		t.Fatalf("global metadata = %#v", remote.Values)
+	}
 	changes := []Change{
+		{Field: "copyright", Before: "2025 Example, Inc.", After: "2026 Example, Inc."},
+		{Field: "accessibility_url", Before: "https://example.com/accessibility", After: "https://example.com/a11y"},
 		{Locale: "en-US", Field: "name", Before: "Old Name", After: "New Name"},
 		{Locale: "en-US", Field: "description", Before: "Old description", After: "New description"},
 	}
 	if err := client.ApplyMetadata(context.Background(), remote, []string{"en-US"}, changes); err != nil {
 		t.Fatal(err)
 	}
-	if len(mutations) != 2 {
-		t.Fatalf("got %d mutations, want 2", len(mutations))
+	if len(mutations) != 4 {
+		t.Fatalf("got %d mutations, want 4", len(mutations))
+	}
+	wantPaths := []string{"/v1/apps/app-1", "/v1/appStoreVersions/version-1", "/v1/appInfoLocalizations/info-loc-1", "/v1/appStoreVersionLocalizations/version-loc-1"}
+	for index := range wantPaths {
+		if mutationPaths[index] != wantPaths[index] {
+			t.Fatalf("mutation paths = %#v, want %#v", mutationPaths, wantPaths)
+		}
 	}
 }
 
@@ -278,6 +291,41 @@ func TestApplyMetadataRejectsUnknownField(t *testing.T) {
 	err := client.ApplyMetadata(context.Background(), Metadata{}, []string{"en-US"}, []Change{{Locale: "en-US", Field: "unknown"}})
 	if err == nil || !strings.Contains(err.Error(), "unsupported metadata field") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyMetadataClearsNullableAccessibilityURL(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/v1/apps/app-1" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected request", http.StatusNotFound)
+			return
+		}
+		var body struct {
+			Data struct {
+				Attributes map[string]any `json:"attributes"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		value, exists := body.Data.Attributes["accessibilityUrl"]
+		if !exists || value != nil {
+			t.Errorf("accessibilityUrl = %#v, exists = %t", value, exists)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := testClient(t, server.URL)
+	err := client.ApplyMetadata(context.Background(), Metadata{AppID: "app-1"}, nil, []Change{
+		{Field: "accessibility_url", Before: "https://example.com/accessibility", After: ""},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
