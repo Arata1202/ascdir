@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 )
 
@@ -170,13 +169,4 @@ func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset
 		return "", fmt.Errorf("commit %s: %w", asset.FileName, err)
 	}
 	return response.Data.ID, nil
-}
-
-func sortedPreviewTypes(sets map[string][]Asset) []string {
-	values := make([]string, 0, len(sets))
-	for value := range sets {
-		values = append(values, value)
-	}
-	sort.Strings(values)
-	return values
 }
