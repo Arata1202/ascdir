@@ -28,6 +28,13 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 			writeData(t, w, []any{resourceJSON("app-1", "apps", map[string]any{"bundleId": "com.example.app", "accessibilityUrl": "https://example.com/accessibility", "contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT"})})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/app-1/appInfos":
 			writeData(t, w, []any{resourceJSON("info-1", "appInfos", nil)})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/appInfos/info-1":
+			if err := json.NewEncoder(w).Encode(map[string]any{"data": resource{ID: "info-1", Type: "appInfos", Relationships: map[string]relationship{
+				"primaryCategory":   {Data: &resourceIdentifier{Type: "appCategories", ID: "PRODUCTIVITY"}},
+				"secondaryCategory": {Data: &resourceIdentifier{Type: "appCategories", ID: "UTILITIES"}},
+			}}}); err != nil {
+				t.Error(err)
+			}
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/appInfos/info-1/appInfoLocalizations":
 			writeData(t, w, []any{resourceJSON("info-loc-1", "appInfoLocalizations", map[string]any{"locale": "en-US", "name": "Old Name", "subtitle": "Subtitle", "privacyPolicyUrl": "https://example.com/privacy"})})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/app-1/appStoreVersions":
@@ -65,20 +72,25 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	if remote.Values["content_rights_declaration"] != "DOES_NOT_USE_THIRD_PARTY_CONTENT" {
 		t.Fatalf("content rights declaration = %q", remote.Values["content_rights_declaration"])
 	}
+	if remote.Values["primary_category"] != "PRODUCTIVITY" || remote.Values["secondary_category"] != "UTILITIES" {
+		t.Fatalf("categories = %#v", remote.Values)
+	}
 	changes := []Change{
 		{Field: "copyright", Before: "2025 Example, Inc.", After: "2026 Example, Inc."},
 		{Field: "accessibility_url", Before: "https://example.com/accessibility", After: "https://example.com/a11y"},
 		{Field: "content_rights_declaration", Before: "DOES_NOT_USE_THIRD_PARTY_CONTENT", After: "USES_THIRD_PARTY_CONTENT"},
+		{Field: "primary_category", Before: "PRODUCTIVITY", After: "BUSINESS"},
+		{Field: "secondary_category", Before: "UTILITIES", After: ""},
 		{Locale: "en-US", Field: "name", Before: "Old Name", After: "New Name"},
 		{Locale: "en-US", Field: "description", Before: "Old description", After: "New description"},
 	}
 	if err := client.ApplyMetadata(context.Background(), remote, []string{"en-US"}, changes); err != nil {
 		t.Fatal(err)
 	}
-	if len(mutations) != 4 {
-		t.Fatalf("got %d mutations, want 4", len(mutations))
+	if len(mutations) != 5 {
+		t.Fatalf("got %d mutations, want 5", len(mutations))
 	}
-	wantPaths := []string{"/v1/apps/app-1", "/v1/appStoreVersions/version-1", "/v1/appInfoLocalizations/info-loc-1", "/v1/appStoreVersionLocalizations/version-loc-1"}
+	wantPaths := []string{"/v1/apps/app-1", "/v1/appInfos/info-1", "/v1/appStoreVersions/version-1", "/v1/appInfoLocalizations/info-loc-1", "/v1/appStoreVersionLocalizations/version-loc-1"}
 	for index := range wantPaths {
 		if mutationPaths[index] != wantPaths[index] {
 			t.Fatalf("mutation paths = %#v, want %#v", mutationPaths, wantPaths)
@@ -88,6 +100,12 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	attributes := data["attributes"].(map[string]any)
 	if attributes["contentRightsDeclaration"] != "USES_THIRD_PARTY_CONTENT" {
 		t.Fatalf("app attributes = %#v", attributes)
+	}
+	categoryData := mutations[1]["data"].(map[string]any)
+	relationships := categoryData["relationships"].(map[string]any)
+	primary := relationships["primaryCategory"].(map[string]any)["data"].(map[string]any)
+	if primary["id"] != "BUSINESS" || relationships["secondaryCategory"].(map[string]any)["data"] != nil {
+		t.Fatalf("category relationships = %#v", relationships)
 	}
 }
 

@@ -21,7 +21,7 @@ func TestWriteReadAndDiff(t *testing.T) {
 	configured.Values.Subtitle = nil
 	cfg.Localizations["en-US"] = configured
 	remote := appstore.Metadata{Values: map[string]string{
-		"copyright": "2026 Example, Inc.", "accessibility_url": "https://example.com/accessibility",
+		"copyright": "2026 Example, Inc.", "accessibility_url": "https://example.com/accessibility", "primary_category": "PRODUCTIVITY",
 	}, Localizations: map[string]appstore.Localization{
 		"en-US": {Values: map[string]string{"name": "Example", "subtitle": "Not managed", "description": "Description", "support_url": "https://example.com/support"}},
 	}}
@@ -50,6 +50,9 @@ func TestWriteReadAndDiff(t *testing.T) {
 	}
 	if local.Values["copyright"] != "2026 Example, Inc." || local.Values["accessibility_url"] != "https://example.com/accessibility" {
 		t.Fatalf("global metadata = %#v", local.Values)
+	}
+	if local.Values["primary_category"] != "PRODUCTIVITY" {
+		t.Fatalf("categories = %#v", local.Values)
 	}
 	localization := local.Localizations["en-US"]
 	localization.Values["name"] = "Updated"
@@ -101,17 +104,38 @@ func TestValidateGlobalMetadata(t *testing.T) {
 	}
 }
 
+func TestValidateCategories(t *testing.T) {
+	t.Parallel()
+	values := appstore.Metadata{Values: map[string]string{
+		"primary_category":          "GAMES",
+		"secondary_category":        "GAMES",
+		"primary_subcategory_two":   "GAMES_ACTION",
+		"secondary_subcategory_one": "GAMES_CASINO",
+	}}
+	problems := Validate(values)
+	joined := strings.Join(problems, "\n")
+	for _, expected := range []string{"must differ", "primary_subcategory_two requires"} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("problems = %#v; missing %q", problems, expected)
+		}
+	}
+	missingParent := Validate(appstore.Metadata{Values: map[string]string{"secondary_subcategory_one": "GAMES_CASINO"}})
+	if !strings.Contains(strings.Join(missingParent, "\n"), "secondary subcategories require") {
+		t.Fatalf("problems = %#v", missingParent)
+	}
+}
+
 func TestDiffAndPrintGlobalMetadata(t *testing.T) {
 	t.Parallel()
-	desired := appstore.Metadata{Values: map[string]string{"copyright": "2026 Example, Inc."}}
-	remote := appstore.Metadata{Values: map[string]string{"copyright": "2025 Example, Inc."}}
+	desired := appstore.Metadata{Values: map[string]string{"copyright": "2026 Example, Inc.", "primary_category": "BUSINESS"}}
+	remote := appstore.Metadata{Values: map[string]string{"copyright": "2025 Example, Inc.", "primary_category": "PRODUCTIVITY"}}
 	changes := Diff(desired, remote)
-	if len(changes) != 1 || changes[0].Locale != "" || changes[0].Field != "copyright" {
+	if len(changes) != 2 || changes[0].Locale != "" || changes[0].Field != "copyright" {
 		t.Fatalf("changes = %#v", changes)
 	}
 	var output bytes.Buffer
 	PrintChanges(&output, changes)
-	if !strings.Contains(output.String(), "metadata.copyright") {
+	if !strings.Contains(output.String(), "metadata.copyright") || !strings.Contains(output.String(), "categories.primary_category") {
 		t.Fatalf("output = %q", output.String())
 	}
 }

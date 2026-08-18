@@ -19,6 +19,7 @@ type Config struct {
 	Version       string                  `yaml:"version"`
 	App           App                     `yaml:"app"`
 	Metadata      MetadataValues          `yaml:"metadata,omitempty"`
+	Categories    CategoryValues          `yaml:"categories,omitempty"`
 	Localizations map[string]Localization `yaml:"localizations"`
 }
 
@@ -36,6 +37,17 @@ type MetadataValues struct {
 	Copyright                *string `yaml:"copyright,omitempty"`
 	AccessibilityURL         *string `yaml:"accessibility_url,omitempty"`
 	ContentRightsDeclaration *string `yaml:"content_rights_declaration,omitempty"`
+}
+
+// CategoryValues contains App Store category relationship IDs. Pointers
+// distinguish an unmanaged relationship from one intentionally cleared.
+type CategoryValues struct {
+	PrimaryCategory         *string `yaml:"primary_category,omitempty"`
+	PrimarySubcategoryOne   *string `yaml:"primary_subcategory_one,omitempty"`
+	PrimarySubcategoryTwo   *string `yaml:"primary_subcategory_two,omitempty"`
+	SecondaryCategory       *string `yaml:"secondary_category,omitempty"`
+	SecondarySubcategoryOne *string `yaml:"secondary_subcategory_one,omitempty"`
+	SecondarySubcategoryTwo *string `yaml:"secondary_subcategory_two,omitempty"`
 }
 
 // Localization keeps short scalar values in YAML and long-form content in
@@ -94,6 +106,14 @@ func New(appID, bundleID, platform, version string, locales []string) Config {
 			Copyright:                stringPointer(""),
 			AccessibilityURL:         stringPointer(""),
 			ContentRightsDeclaration: stringPointer(""),
+		},
+		Categories: CategoryValues{
+			PrimaryCategory:         stringPointer(""),
+			PrimarySubcategoryOne:   stringPointer(""),
+			PrimarySubcategoryTwo:   stringPointer(""),
+			SecondaryCategory:       stringPointer(""),
+			SecondarySubcategoryOne: stringPointer(""),
+			SecondarySubcategoryTwo: stringPointer(""),
 		},
 		Localizations: make(map[string]Localization, len(locales)),
 	}
@@ -281,6 +301,9 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 	if err := updateScalarMapping(mappingValue(root, "metadata"), "metadata", cfg.Metadata.Pointers()); err != nil {
 		return nil, err
 	}
+	if err := updateScalarMapping(mappingValue(root, "categories"), "categories", cfg.Categories.Pointers()); err != nil {
+		return nil, err
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
@@ -346,6 +369,14 @@ func addSchemaComments(document *yaml.Node) {
 		"copyright":                  "Year and rights holder, for example: 2026 Example, Inc.",
 		"accessibility_url":          "Optional public HTTP(S) accessibility information page",
 		"content_rights_declaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT or USES_THIRD_PARTY_CONTENT",
+	})
+	addMappingComments(mappingValue(root, "categories"), map[string]string{
+		"primary_category":          "Required top-level App Store category ID",
+		"primary_subcategory_one":   "Optional first Games or Stickers subcategory ID",
+		"primary_subcategory_two":   "Optional second Games or Stickers subcategory ID",
+		"secondary_category":        "Optional secondary top-level App Store category ID",
+		"secondary_subcategory_one": "Optional first secondary Games or Stickers subcategory ID",
+		"secondary_subcategory_two": "Optional second secondary Games or Stickers subcategory ID",
 	})
 	for index := 0; index+1 < len(localizations.Content); index += 2 {
 		locale := localizations.Content[index+1]
@@ -506,6 +537,45 @@ func (v *MetadataValues) SetManaged(field, value string) {
 		v.AccessibilityURL = pointer
 	case "content_rights_declaration":
 		v.ContentRightsDeclaration = pointer
+	}
+}
+
+func (v CategoryValues) Map() map[string]string {
+	result := map[string]string{}
+	for field, value := range v.Pointers() {
+		if value != nil {
+			result[field] = *value
+		}
+	}
+	return result
+}
+
+func (v CategoryValues) Pointers() map[string]*string {
+	return map[string]*string{
+		"primary_category":          v.PrimaryCategory,
+		"primary_subcategory_one":   v.PrimarySubcategoryOne,
+		"primary_subcategory_two":   v.PrimarySubcategoryTwo,
+		"secondary_category":        v.SecondaryCategory,
+		"secondary_subcategory_one": v.SecondarySubcategoryOne,
+		"secondary_subcategory_two": v.SecondarySubcategoryTwo,
+	}
+}
+
+func (v *CategoryValues) SetManaged(field, value string) {
+	pointer := stringPointer(value)
+	switch field {
+	case "primary_category":
+		v.PrimaryCategory = pointer
+	case "primary_subcategory_one":
+		v.PrimarySubcategoryOne = pointer
+	case "primary_subcategory_two":
+		v.PrimarySubcategoryTwo = pointer
+	case "secondary_category":
+		v.SecondaryCategory = pointer
+	case "secondary_subcategory_one":
+		v.SecondarySubcategoryOne = pointer
+	case "secondary_subcategory_two":
+		v.SecondarySubcategoryTwo = pointer
 	}
 }
 

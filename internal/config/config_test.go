@@ -25,7 +25,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"version: \"2\"", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "values:", "files:", "# App Store display name", "# Markdown file containing the long app description"} {
+	for _, expected := range []string{"version: \"2\"", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# App Store display name", "# Markdown file containing the long app description"} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated config is missing %q:\n%s", expected, data)
 		}
@@ -113,6 +113,9 @@ localizations:
 	}
 	if len(cfg.Metadata.Map()) != 0 {
 		t.Fatalf("metadata unexpectedly became managed: %#v", cfg.Metadata.Map())
+	}
+	if len(cfg.Categories.Map()) != 0 {
+		t.Fatalf("categories unexpectedly became managed: %#v", cfg.Categories.Map())
 	}
 }
 

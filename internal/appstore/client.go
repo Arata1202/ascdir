@@ -49,9 +49,19 @@ type Localization struct {
 }
 
 type resource struct {
-	ID         string         `json:"id"`
-	Type       string         `json:"type"`
-	Attributes map[string]any `json:"attributes"`
+	ID            string                  `json:"id"`
+	Type          string                  `json:"type"`
+	Attributes    map[string]any          `json:"attributes"`
+	Relationships map[string]relationship `json:"relationships"`
+}
+
+type relationship struct {
+	Data *resourceIdentifier `json:"data"`
+}
+
+type resourceIdentifier struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
 }
 
 type listResponse struct {
@@ -138,6 +148,19 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 		return Metadata{}, err
 	}
 	result.AppInfoID = appInfo.ID
+	var appInfoResponse singleResponse
+	categoryIncludes := strings.Join(sortedRemoteFields(categoryFields), ",")
+	appInfoPath := fmt.Sprintf("/v1/appInfos/%s?include=%s", result.AppInfoID, categoryIncludes)
+	if err := c.doJSON(ctx, http.MethodGet, appInfoPath, nil, &appInfoResponse); err != nil {
+		return Metadata{}, err
+	}
+	for field, remoteField := range categoryFields {
+		if related := appInfoResponse.Data.Relationships[remoteField].Data; related != nil {
+			result.Values[field] = related.ID
+		} else {
+			result.Values[field] = ""
+		}
+	}
 
 	infoLocs, err := c.list(ctx, fmt.Sprintf("/v1/appInfos/%s/appInfoLocalizations?limit=200", result.AppInfoID))
 	if err != nil {
@@ -211,6 +234,15 @@ var appStoreVersionFields = map[string]string{
 	"copyright": "copyright",
 }
 
+var categoryFields = map[string]string{
+	"primary_category":          "primaryCategory",
+	"primary_subcategory_one":   "primarySubcategoryOne",
+	"primary_subcategory_two":   "primarySubcategoryTwo",
+	"secondary_category":        "secondaryCategory",
+	"secondary_subcategory_one": "secondarySubcategoryOne",
+	"secondary_subcategory_two": "secondarySubcategoryTwo",
+}
+
 var versionFields = map[string]string{
 	"description":      "description",
 	"keywords":         "keywords",
@@ -237,7 +269,13 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 				global[group] = map[string]any{}
 			}
 			value := any(change.After)
-			if (change.Field == "accessibility_url" || change.Field == "content_rights_declaration") && change.After == "" {
+			if group == "app_info_categories" {
+				var data any
+				if change.After != "" {
+					data = map[string]string{"type": "appCategories", "id": change.After}
+				}
+				value = map[string]any{"data": data}
+			} else if (change.Field == "accessibility_url" || change.Field == "content_rights_declaration") && change.After == "" {
 				value = nil
 			}
 			global[group][fields[change.Field]] = value
@@ -261,10 +299,15 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 	sort.Strings(globalGroups)
 	for index, group := range globalGroups {
 		resourceType, resourceID := "apps", remote.AppID
+		section := "attributes"
+		if group == "app_info_categories" {
+			resourceType, resourceID = "appInfos", remote.AppInfoID
+			section = "relationships"
+		}
 		if group == "app_store_version" {
 			resourceType, resourceID = "appStoreVersions", remote.VersionID
 		}
-		if err := c.patchResource(ctx, resourceType, resourceID, global[group]); err != nil {
+		if err := c.patchResourceSection(ctx, resourceType, resourceID, section, global[group]); err != nil {
 			if index == 0 {
 				return fmt.Errorf("apply %s metadata: %w", group, err)
 			}
@@ -392,6 +435,9 @@ func globalFieldGroup(field string) (string, map[string]string, bool) {
 	if _, ok := appStoreVersionFields[field]; ok {
 		return "app_store_version", appStoreVersionFields, true
 	}
+	if _, ok := categoryFields[field]; ok {
+		return "app_info_categories", categoryFields, true
+	}
 	return "", nil, false
 }
 
@@ -404,8 +450,21 @@ func (c *Client) createLocalization(ctx context.Context, resourceType, parentTyp
 }
 
 func (c *Client) patchResource(ctx context.Context, resourceType, resourceID string, attributes any) error {
-	body := map[string]any{"data": map[string]any{"type": resourceType, "id": resourceID, "attributes": attributes}}
+	return c.patchResourceSection(ctx, resourceType, resourceID, "attributes", attributes)
+}
+
+func (c *Client) patchResourceSection(ctx context.Context, resourceType, resourceID, section string, values any) error {
+	body := map[string]any{"data": map[string]any{"type": resourceType, "id": resourceID, section: values}}
 	return c.doJSON(ctx, http.MethodPatch, "/v1/"+resourceType+"/"+resourceID, body, nil)
+}
+
+func sortedRemoteFields(fields map[string]string) []string {
+	values := make([]string, 0, len(fields))
+	for _, value := range fields {
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	return values
 }
 
 func singular(parentType string) string {
