@@ -127,7 +127,7 @@ Usage:
   ascdir auth check
   ascdir auth logout
   ascdir pull  [--config ascdir.yaml] [--dry-run]
-  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible]
+  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions]
   ascdir check [--config ascdir.yaml]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
@@ -312,7 +312,9 @@ func runPull(ctx context.Context, args []string, environment commandEnvironment)
 	if err != nil {
 		return err
 	}
-	remote, err := client.FetchMetadata(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version, fetchOptions(cfg))
+	options := fetchOptions(cfg)
+	options.DownloadAssets = !*dryRun
+	remote, err := client.FetchMetadata(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version, options)
 	if err != nil {
 		return err
 	}
@@ -343,6 +345,7 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	dryRun := fs.Bool("dry-run", false, "show changes without updating App Store Connect")
 	allowEmpty := fs.Bool("allow-empty", false, "allow clearing non-empty remote fields")
 	allowIrreversible := fs.Bool("allow-irreversible", false, "allow changes Apple may make irreversible, such as Made for Kids")
+	allowAssetDeletions := fs.Bool("allow-asset-deletions", false, "allow replacing or deleting remote assets")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -389,6 +392,13 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	clears := metadata.ClearingChanges(changes)
 	if len(clears) > 0 && !*allowEmpty {
 		return fmt.Errorf("%d change(s) would clear non-empty remote fields; review with --dry-run and rerun with --allow-empty", len(clears))
+	}
+	if !*allowAssetDeletions {
+		for _, change := range changes {
+			if change.AssetSet != nil && metadata.AssetSetDeletesRemoteFiles(*change.AssetSet) {
+				return errors.New("the change would replace or delete remote assets; review with --dry-run and rerun with --allow-asset-deletions")
+			}
+		}
 	}
 	if !*allowIrreversible {
 		for _, change := range changes {
@@ -449,7 +459,7 @@ func requireNoArgs(fs *flag.FlagSet) error {
 }
 
 func fetchOptions(cfg config.Config) appstore.FetchOptions {
-	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil}
+	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != ""}
 }
 
 func newClient(stderr io.Writer) (*appstore.Client, error) {

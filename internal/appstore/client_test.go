@@ -14,6 +14,14 @@ import (
 	"time"
 )
 
+func TestMetadataLocalesAreSorted(t *testing.T) {
+	t.Parallel()
+	metadata := Metadata{Localizations: map[string]Localization{"ja": {}, "en-US": {}, "fr-FR": {}}}
+	if got := strings.Join(metadata.Locales(), ","); got != "en-US,fr-FR,ja" {
+		t.Fatalf("locales = %q", got)
+	}
+}
+
 func TestFetchAndApplyMetadata(t *testing.T) {
 	t.Parallel()
 	var mutations []map[string]any

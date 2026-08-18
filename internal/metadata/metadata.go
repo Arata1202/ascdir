@@ -17,7 +17,7 @@ import (
 )
 
 func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) {
-	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Accessibility: map[string]appstore.AccessibilityDeclaration{}, Localizations: map[string]appstore.Localization{}}
+	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field, value := range cfg.Categories.Map() {
 		result.Values[field] = value
 	}
@@ -42,6 +42,11 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 		}
 		result.Values["license_agreement_text"] = strings.TrimSuffix(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 	}
+	screenshots, err := readLocalScreenshots(cfg, base)
+	if err != nil {
+		return appstore.Metadata{}, err
+	}
+	result.Screenshots = screenshots
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
 		values := localization.Values.Map()
@@ -98,6 +103,46 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		}
 		resolvedPaths[fullPath] = "license_agreement.file"
 		operations = append(operations, writeOperation{field: "license_agreement", path: fullPath, data: []byte(value)})
+	}
+	var staleScreenshots []string
+	if cfg.Assets.Screenshots != "" {
+		root, err := prepareManagedPath(base, filepath.ToSlash(filepath.Join(cfg.Assets.Screenshots, ".keep")))
+		if err != nil {
+			return fmt.Errorf("resolve assets.screenshots: %w", err)
+		}
+		root = filepath.Dir(root)
+		wanted := map[string]bool{}
+		for locale, sets := range remote.Screenshots {
+			for displayType, assets := range sets {
+				for _, asset := range assets {
+					if len(asset.Content) == 0 {
+						return fmt.Errorf("screenshot %s/%s/%s was not downloaded", locale, displayType, asset.FileName)
+					}
+					relative := filepath.ToSlash(filepath.Join(cfg.Assets.Screenshots, locale, displayType, asset.FileName))
+					fullPath, err := prepareManagedPath(base, relative)
+					if err != nil {
+						return fmt.Errorf("resolve screenshot %s: %w", relative, err)
+					}
+					wanted[fullPath] = true
+					operations = append(operations, writeOperation{field: "screenshot", path: fullPath, data: asset.Content})
+				}
+			}
+		}
+		if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || wanted[path] {
+				return nil
+			}
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext == ".png" || ext == ".jpg" || ext == ".jpeg" {
+				staleScreenshots = append(staleScreenshots, path)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("scan assets.screenshots: %w", err)
+		}
 	}
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
@@ -206,6 +251,11 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 				return fmt.Errorf("write %s: %w", operation.field, err)
 			}
 			return fmt.Errorf("write %s.%s: %w", operation.locale, operation.field, err)
+		}
+	}
+	for _, path := range staleScreenshots {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove stale screenshot %s: %w", path, err)
 		}
 	}
 	return nil
@@ -329,11 +379,12 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 			}
 		}
 	}
+	changes = append(changes, screenshotChanges(desired, remote)...)
 	return changes
 }
 
 func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
-	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
+	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field := range cfg.Metadata.Map() {
 		selected.Values[field] = source.Values[field]
 	}
@@ -354,6 +405,10 @@ func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 			values[field] = source.Accessibility[deviceFamily].Values[field]
 		}
 		selected.Accessibility[deviceFamily] = appstore.AccessibilityDeclaration{ID: source.Accessibility[deviceFamily].ID, Values: values}
+	}
+	if cfg.Assets.Screenshots != "" {
+		selected.Screenshots = source.Screenshots
+		selected.ScreenshotSetIDs = source.ScreenshotSetIDs
 	}
 	for locale, localization := range cfg.Localizations {
 		values := map[string]string{}
@@ -382,6 +437,12 @@ func ClearingChanges(changes []appstore.Change) []appstore.Change {
 
 func PrintChanges(w io.Writer, changes []appstore.Change) {
 	for _, change := range changes {
+		if change.AssetSet != nil {
+			fmt.Fprintf(w, "assets.%s.%s.%s\n", change.AssetSet.Kind, change.AssetSet.Locale, change.AssetSet.DisplayType)
+			fmt.Fprintf(w, "- %d asset(s)\n", len(change.AssetSet.Before))
+			fmt.Fprintf(w, "+ %d asset(s)\n", len(change.AssetSet.After))
+			continue
+		}
 		if change.Locale == "" {
 			if change.DeviceFamily != "" {
 				fmt.Fprintf(w, "accessibility.%s.%s\n", change.DeviceFamily, change.Field)
@@ -430,6 +491,13 @@ func Validate(values appstore.Metadata) []string {
 	}
 	urlFields := map[string]bool{"support_url": true, "marketing_url": true, "privacy_policy_url": true, "privacy_choices_url": true}
 	var problems []string
+	for locale, sets := range values.Screenshots {
+		for displayType, assets := range sets {
+			if len(assets) > 10 {
+				problems = append(problems, fmt.Sprintf("assets.screenshots.%s.%s has %d screenshots; maximum is 10", locale, displayType, len(assets)))
+			}
+		}
+	}
 	if value, configured := values.Values["copyright"]; configured && strings.TrimSpace(value) == "" {
 		problems = append(problems, "metadata.copyright is empty")
 	}
