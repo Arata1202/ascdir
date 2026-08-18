@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Add a complete reference configuration covering optional metadata, assets, availability, and pricing.
+
+### Changed
+
+- Guide newly initialized projects through empty managed values, validation, and the first dry run.
+
 ## [1.1.2] - 2026-08-19
 
 ### Fixed

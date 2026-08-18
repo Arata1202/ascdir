@@ -1,0 +1,125 @@
+# Complete reference configuration. Copy only the sections you want ascdir to
+# manage; omitting a field leaves its App Store Connect value unchanged.
+# This file contains placeholders and is not intended to be pushed unchanged.
+version: "2"
+
+app:
+  id: "1234567890"
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.2.0
+
+metadata:
+  copyright: "2026 Example, Inc."
+  accessibility_url: https://example.com/accessibility
+  content_rights_declaration: DOES_NOT_USE_THIRD_PARTY_CONTENT
+
+categories:
+  primary_category: PRODUCTIVITY
+  primary_subcategory_one: "" # Explicitly clear; omit to leave unmanaged
+  primary_subcategory_two: "" # Explicitly clear; omit to leave unmanaged
+  secondary_category: UTILITIES
+  secondary_subcategory_one: "" # Explicitly clear; omit to leave unmanaged
+  secondary_subcategory_two: "" # Explicitly clear; omit to leave unmanaged
+
+age_rating:
+  advertising: false
+  alcohol_tobacco_or_drug_use_or_references: NONE
+  contests: NONE
+  gambling: false
+  gambling_simulated: NONE
+  guns_or_other_weapons: NONE
+  health_or_wellness_topics: false
+  kids_age_band: "" # Explicitly clear Made for Kids; omit to leave unmanaged
+  loot_box: false
+  medical_or_treatment_information: NONE
+  messaging_and_chat: false
+  parental_controls: false
+  profanity_or_crude_humor: NONE
+  age_assurance: false
+  sexual_content_graphic_and_nudity: NONE
+  sexual_content_or_nudity: NONE
+  social_media: false
+  social_media_age_restricted: false
+  horror_or_fear_themes: NONE
+  mature_or_suggestive_themes: NONE
+  unrestricted_web_access: false
+  user_generated_content: false
+  violence_cartoon_or_fantasy: NONE
+  violence_realistic_prolonged_graphic_or_sadistic: NONE
+  violence_realistic: NONE
+  age_rating_override: NONE
+  korea_age_rating_override: NONE
+  developer_age_rating_info_url: https://example.com/age-rating
+
+accessibility:
+  IPHONE:
+    published: false
+    supports_audio_descriptions: false
+    supports_captions: false
+    supports_dark_interface: true
+    supports_differentiate_without_color_alone: true
+    supports_larger_text: true
+    supports_reduced_motion: true
+    supports_sufficient_contrast: true
+    supports_voice_control: false
+    supports_voiceover: true
+
+# Omit this section when using Apple's standard EULA.
+license_agreement:
+  file: metadata/license_agreement.md
+  territories:
+    - JPN
+    - USA
+
+assets:
+  screenshots: assets/screenshots
+  app_previews: assets/app-previews
+  preview_frame_times:
+    en-US/IPHONE_67/01-demo.mp4: "00:00:05"
+
+availability:
+  available_in_new_territories: false
+  territories:
+    JPN:
+      available: true
+      release_date: "2026-09-01"
+      pre_order_enabled: false
+    USA:
+      available: true
+
+# Find valid price-point IDs with `ascdir price-points --territory USA`.
+pricing:
+  base_territory: USA
+  scheduled_prices:
+    - price_point_id: REPLACE_WITH_PRICE_POINT_ID
+      start_date: "2026-09-01"
+
+localizations:
+  en-US:
+    values:
+      name: Example App
+      subtitle: A concise app subtitle
+      keywords: productivity,example
+      support_url: https://example.com/support
+      marketing_url: https://example.com
+      privacy_policy_url: https://example.com/privacy
+      privacy_choices_url: https://example.com/privacy/choices
+    files:
+      description: metadata/en-US/description.md
+      promotional_text: metadata/en-US/promotional_text.md
+      whats_new: metadata/en-US/whats_new.md
+      # privacy_policy_text: metadata/en-US/privacy_policy.md # TV_OS only
+  ja:
+    values:
+      name: サンプルアプリ
+      subtitle: 簡潔なサブタイトル
+      keywords: 生産性,サンプル
+      support_url: https://example.com/ja/support
+      marketing_url: https://example.com/ja
+      privacy_policy_url: https://example.com/ja/privacy
+      privacy_choices_url: https://example.com/ja/privacy/choices
+    files:
+      description: metadata/ja/description.md
+      promotional_text: metadata/ja/promotional_text.md
+      whats_new: metadata/ja/whats_new.md

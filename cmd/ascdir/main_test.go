@@ -276,6 +276,11 @@ func TestRunInitPullAndPush(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Created") {
 		t.Fatalf("output = %q", stdout.String())
 	}
+	for _, expected := range []string{"Next steps:", "empty managed value(s)", "ascdir check --config", "ascdir push --config", "examples/ascdir.full.yaml"} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("init output is missing %q: %q", expected, stdout.String())
+		}
+	}
 	if err := runWithEnvironment(context.Background(), []string{
 		"init", "--bundle-id", "com.example.app", "--version", "1.0.0", "--config", configPath,
 	}, environment); err == nil || !strings.Contains(err.Error(), "already exists") {

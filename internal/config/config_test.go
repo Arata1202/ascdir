@@ -265,6 +265,18 @@ localizations:
 	}
 }
 
+func TestCompleteExampleLoadsAndValidates(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join("..", "..", "examples", "ascdir.full.yaml")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("complete example is invalid: %v", err)
+	}
+}
+
 func TestAgeRatingBooleansRemainTypedWhenUpdated(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ascdir.yaml")

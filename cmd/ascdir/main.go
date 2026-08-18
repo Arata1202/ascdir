@@ -331,7 +331,53 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 		return err
 	}
 	fmt.Fprintf(environment.stdout, "Created %s with %d localization(s).\n", *configPath, len(locales))
+	emptyValues := -1
+	generated, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintf(environment.stderr, "warning: could not inspect generated project: %v\n", err)
+	} else if local, err := metadata.ReadLocal(generated, *configPath); err != nil {
+		fmt.Fprintf(environment.stderr, "warning: could not inspect generated project: %v\n", err)
+	} else {
+		emptyValues = countEmptyManagedValues(local)
+	}
+	printInitNextSteps(environment.stdout, *configPath, emptyValues)
 	return nil
+}
+
+func countEmptyManagedValues(local appstore.Metadata) int {
+	count := 0
+	for _, value := range local.Values {
+		if strings.TrimSpace(value) == "" {
+			count++
+		}
+	}
+	for _, localization := range local.Localizations {
+		for _, value := range localization.Values {
+			if strings.TrimSpace(value) == "" {
+				count++
+			}
+		}
+	}
+	for _, declaration := range local.Accessibility {
+		for _, value := range declaration.Values {
+			if strings.TrimSpace(value) == "" {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func printInitNextSteps(writer io.Writer, configPath string, emptyValues int) {
+	fmt.Fprintln(writer, "Next steps:")
+	if emptyValues > 0 {
+		fmt.Fprintf(writer, "  1. Fill or remove the %d empty managed value(s) in %s and its referenced text files.\n", emptyValues, configPath)
+	} else {
+		fmt.Fprintf(writer, "  1. Review %s and its referenced text files.\n", configPath)
+	}
+	fmt.Fprintln(writer, "  2. Optionally enable screenshots, App Previews, availability, or pricing in the YAML.")
+	fmt.Fprintf(writer, "  3. Run `ascdir check --config %s`, then `ascdir push --config %s --dry-run`.\n", configPath, configPath)
+	fmt.Fprintln(writer, "Full example: https://github.com/Arata1202/ascdir/blob/main/examples/ascdir.full.yaml")
 }
 
 func runPull(ctx context.Context, args []string, environment commandEnvironment) error {
