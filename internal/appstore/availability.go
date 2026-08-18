@@ -78,7 +78,7 @@ func (c *Client) applyAvailabilityChanges(ctx context.Context, remote Metadata, 
 	for index, territory := range territories {
 		resourceID := remote.TerritoryAvailabilityIDs[territory]
 		if resourceID == "" {
-			return fmt.Errorf("App Store Connect returned no availability resource for territory %s", territory)
+			return fmt.Errorf("no availability resource was returned for territory %s", territory)
 		}
 		attributes, err := availabilityAttributes(byTerritory[territory])
 		if err != nil {
