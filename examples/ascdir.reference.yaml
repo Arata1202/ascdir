@@ -1,6 +1,6 @@
-# Complete reference configuration. Copy only the sections you want ascdir to
-# manage; omitting a field leaves its App Store Connect value unchanged.
-# This file contains placeholders and is not intended to be pushed unchanged.
+# Exhaustive schema reference. This file contains illustrative values and paths
+# and is not intended to be pushed unchanged. Omit optional fields to leave
+# their remote values unmanaged; an explicit empty value requests clearing.
 version: "2"
 
 app:
@@ -16,11 +16,12 @@ metadata:
 
 categories:
   primary_category: PRODUCTIVITY
-  primary_subcategory_one: "" # Explicitly clear; omit to leave unmanaged
-  primary_subcategory_two: "" # Explicitly clear; omit to leave unmanaged
+  # Games and Stickers apps can also manage subcategory IDs:
+  # primary_subcategory_one: GAMES_ACTION
+  # primary_subcategory_two: GAMES_ADVENTURE
   secondary_category: UTILITIES
-  secondary_subcategory_one: "" # Explicitly clear; omit to leave unmanaged
-  secondary_subcategory_two: "" # Explicitly clear; omit to leave unmanaged
+  # secondary_subcategory_one: GAMES_ACTION
+  # secondary_subcategory_two: GAMES_ADVENTURE
 
 age_rating:
   advertising: false
@@ -30,7 +31,7 @@ age_rating:
   gambling_simulated: NONE
   guns_or_other_weapons: NONE
   health_or_wellness_topics: false
-  kids_age_band: "" # Explicitly clear Made for Kids; omit to leave unmanaged
+  # kids_age_band: FIVE_AND_UNDER
   loot_box: false
   medical_or_treatment_information: NONE
   messaging_and_chat: false
@@ -88,12 +89,14 @@ availability:
     USA:
       available: true
 
-# Find valid price-point IDs with `ascdir price-points --territory USA`.
-pricing:
-  base_territory: USA
-  scheduled_prices:
-    - price_point_id: REPLACE_WITH_PRICE_POINT_ID
-      start_date: "2026-09-01"
+# Find valid IDs with `ascdir price-points --territory USA` before uncommenting
+# pricing. Keeping the placeholder inactive avoids suggesting it can be pushed.
+# pricing:
+#   base_territory: USA
+#   scheduled_prices:
+#     - price_point_id: eyJ...
+#       start_date: "2026-09-01"
+#       end_date: "2026-12-31"
 
 localizations:
   en-US:

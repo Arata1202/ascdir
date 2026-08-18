@@ -25,7 +25,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"version: \"2\"", "# ascdir configuration schema version", "# App bundle identifier", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# App Store display name", "# Required plain-text product description; Markdown is not rendered"} {
+	for _, expected := range []string{"version: \"2\"", "# ascdir configuration schema version", "# App bundle identifier", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# Per-locale storefront text; see docs/metadata.md"} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated config is missing %q:\n%s", expected, data)
 		}
@@ -55,7 +55,7 @@ func TestNewIncludesPrivacyPolicyTextOnlyForTVOS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "privacy_policy_text: metadata/en-US/privacy_policy.md # Required plain-text tvOS privacy policy; TV_OS only") {
+	if !strings.Contains(string(data), "privacy_policy_text: metadata/en-US/privacy_policy.md") {
 		t.Fatalf("generated tvOS config lacks the privacy policy explanation:\n%s", data)
 	}
 }
@@ -98,10 +98,10 @@ func TestSaveCommentsOptionalSections(t *testing.T) {
 	for _, expected := range []string{
 		"# Optional plain-text custom EULA; omit this section to leave it unmanaged",
 		"# Managed screenshot root, structured by locale and display type",
+		"# Optional territory availability and preorders; see docs/availability.md",
 		"# Initial setting for territories Apple adds later",
-		"# Whether the app is available in this territory",
+		"# Optional append-only price schedule; see docs/pricing.md",
 		"# Three-letter App Store base territory ID",
-		"# App Store Connect price-point ID",
 	} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated optional section comments are missing %q:\n%s", expected, data)
@@ -265,15 +265,18 @@ localizations:
 	}
 }
 
-func TestCompleteExampleLoadsAndValidates(t *testing.T) {
+func TestExamplesLoadAndValidate(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join("..", "..", "examples", "ascdir.full.yaml")
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("complete example is invalid: %v", err)
+	for _, name := range []string{"ascdir.minimal.yaml", "ascdir.reference.yaml"} {
+		path := filepath.Join("..", "..", "examples", name)
+		cfg, err := Load(path)
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("%s is invalid: %v", name, err)
+		}
 	}
 }
 

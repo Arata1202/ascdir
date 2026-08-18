@@ -8,11 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- Add a complete reference configuration covering optional metadata, assets, availability, and pricing.
+- Add separate safe-minimal and exhaustive-reference configurations for first-time setup and advanced options.
 
 ### Changed
 
-- Guide newly initialized projects through empty managed values, validation, and the first dry run.
+- Group empty managed fields by location after `init`, reduce repeated generated comments, and guide users through validation and the first dry run.
 
 ## [1.1.2] - 2026-08-19
 
