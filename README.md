@@ -198,6 +198,11 @@ Version-level localization fields:
 
 When a configured locale does not exist remotely, `push` creates both the app-level and version-level localization resources in the order required by App Store Connect.
 
+ascdir intentionally uses documented public API operations only. See
+[App Store Connect API coverage](docs/app-store-connect-api-coverage.md) for
+product-page settings that Apple doesn't currently expose as writable API
+resources.
+
 ## Commands
 
 ### `ascdir auth check`
