@@ -61,6 +61,7 @@ type FetchOptions struct {
 	Screenshots      bool
 	DownloadAssets   bool
 	AppPreviews      bool
+	Availability     bool
 }
 
 type Asset struct {
@@ -75,13 +76,12 @@ type Asset struct {
 }
 
 type AssetSetChange struct {
-	Kind         string
-	Locale       string
-	DisplayType  string
-	SetID        string
-	Before       []Asset
-	After        []Asset
-	Availability bool
+	Kind        string
+	Locale      string
+	DisplayType string
+	SetID       string
+	Before      []Asset
+	After       []Asset
 }
 
 type Localization struct {

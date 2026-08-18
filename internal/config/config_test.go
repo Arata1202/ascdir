@@ -321,3 +321,33 @@ func TestLicenseAgreementValuesMapsDeterministically(t *testing.T) {
 		t.Fatalf("license agreement territories = %q", got)
 	}
 }
+
+func TestAvailabilityValuesMapAndSetManaged(t *testing.T) {
+	t.Parallel()
+	availableInNewTerritories, available, preOrder := true, false, true
+	releaseDate := "2026-09-01"
+	values := AvailabilityValues{
+		AvailableInNewTerritories: &availableInNewTerritories,
+		Territories: map[string]TerritoryAvailability{"USA": {
+			Available: &available, ReleaseDate: &releaseDate, PreOrderEnabled: &preOrder,
+		}},
+	}
+	mapped := values.Map()
+	for field, expected := range map[string]string{
+		"availability.available_in_new_territories":      "true",
+		"availability.territories.USA.available":         "false",
+		"availability.territories.USA.release_date":      "2026-09-01",
+		"availability.territories.USA.pre_order_enabled": "true",
+	} {
+		if mapped[field] != expected {
+			t.Fatalf("%s = %q", field, mapped[field])
+		}
+	}
+	var managed AvailabilityValues
+	for field, value := range mapped {
+		managed.SetManaged(field, value)
+	}
+	if got := managed.Map(); len(got) != len(mapped) {
+		t.Fatalf("managed availability = %#v", got)
+	}
+}
