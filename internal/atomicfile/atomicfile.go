@@ -1,7 +1,9 @@
 package atomicfile
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -12,6 +14,10 @@ type Pending struct {
 }
 
 func Prepare(path string, data []byte, mode os.FileMode) (_ *Pending, err error) {
+	return PrepareReader(path, bytes.NewReader(data), mode)
+}
+
+func PrepareReader(path string, source io.Reader, mode os.FileMode) (_ *Pending, err error) {
 	directory := filepath.Dir(filepath.Clean(path))
 	temporary, err := os.CreateTemp(directory, "."+filepath.Base(path)+"-*")
 	if err != nil {
@@ -27,7 +33,7 @@ func Prepare(path string, data []byte, mode os.FileMode) (_ *Pending, err error)
 	if err := temporary.Chmod(mode); err != nil {
 		return nil, fmt.Errorf("set temporary file mode: %w", err)
 	}
-	if _, err := temporary.Write(data); err != nil {
+	if _, err := io.Copy(temporary, source); err != nil {
 		return nil, fmt.Errorf("write temporary file: %w", err)
 	}
 	if err := temporary.Sync(); err != nil {

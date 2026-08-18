@@ -77,3 +77,38 @@ func TestPreviewAssetsEqual(t *testing.T) {
 		t.Fatal("different preview asset counts compare equal")
 	}
 }
+
+func TestWriteLocalStreamsDownloadedAppPreview(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.AppPreviews = "assets/app-previews"
+	if err := config.Save(configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(dir, "downloaded-preview")
+	content := []byte("streamed video")
+	if err := os.WriteFile(source, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	remote := appstore.Metadata{
+		Values:        map[string]string{},
+		Localizations: map[string]appstore.Localization{"en-US": {Values: map[string]string{}}},
+		AppPreviews:   map[string]map[string][]appstore.Asset{"en-US": {"IPHONE_67": {{FileName: "01.mp4", Path: source, Size: int64(len(content))}}}},
+	}
+	if err := WriteLocal(cfg, configPath, remote); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(dir, "assets", "app-previews", "en-US", "IPHONE_67", "01.mp4")
+	written, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(written) != string(content) {
+		t.Fatalf("content = %q", written)
+	}
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("temporary source remains: %v", err)
+	}
+}

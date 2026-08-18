@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"mime"
 	"os"
 	"path/filepath"
@@ -58,11 +59,22 @@ func readLocalAppPreviews(cfg config.Config, base string) (map[string]map[string
 		if extension != ".mov" && extension != ".mp4" && extension != ".m4v" {
 			return fmt.Errorf("app preview %s must be MOV, MP4, or M4V", relative)
 		}
-		data, err := os.ReadFile(path)
+		file, err := os.Open(path)
 		if err != nil {
 			return err
 		}
-		sum := md5.Sum(data)
+		hash := md5.New()
+		if _, err := io.Copy(hash, file); err != nil {
+			file.Close()
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
 		mimeType := mime.TypeByExtension(extension)
 		if extension == ".mov" {
 			mimeType = "video/quicktime"
@@ -70,7 +82,7 @@ func readLocalAppPreviews(cfg config.Config, base string) (map[string]map[string
 			mimeType = "video/mp4"
 		}
 		key := filepath.ToSlash(filepath.Join(locale, previewType, entry.Name()))
-		asset := appstore.Asset{FileName: entry.Name(), Path: path, Checksum: hex.EncodeToString(sum[:]), Content: data, MIMEType: mimeType, PreviewFrameTimeCode: cfg.Assets.PreviewFrameTimes[key]}
+		asset := appstore.Asset{FileName: entry.Name(), Path: path, Checksum: hex.EncodeToString(hash.Sum(nil)), Size: info.Size(), MIMEType: mimeType, PreviewFrameTimeCode: cfg.Assets.PreviewFrameTimes[key]}
 		if result[locale] == nil {
 			result[locale] = map[string][]appstore.Asset{}
 		}

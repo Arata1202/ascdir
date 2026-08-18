@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -38,7 +39,12 @@ func TestFetchAppPreviewsDownloadsVideoAndFrameTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	asset := metadata.AppPreviews["en-US"]["IPHONE_67"][0]
-	if string(asset.Content) != string(video) || asset.PreviewFrameTimeCode != "00:00:05" || metadata.AppPreviewSetIDs["en-US"]["IPHONE_67"] != "set-1" {
+	defer os.Remove(asset.Path)
+	downloaded, err := os.ReadFile(asset.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(downloaded) != string(video) || asset.PreviewFrameTimeCode != "00:00:05" || metadata.AppPreviewSetIDs["en-US"]["IPHONE_67"] != "set-1" {
 		t.Fatalf("asset = %#v", asset)
 	}
 }

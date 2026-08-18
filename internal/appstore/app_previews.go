@@ -5,8 +5,10 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -41,7 +43,7 @@ func (c *Client) fetchAppPreviews(ctx context.Context, result *Metadata, downloa
 					if videoURL == "" {
 						return fmt.Errorf("app preview %s/%s/%s has no video URL", locale, previewType, asset.FileName)
 					}
-					asset.Content, err = c.downloadAsset(ctx, videoURL)
+					asset.Path, asset.Size, err = c.downloadAssetToFile(ctx, videoURL)
 					if err != nil {
 						return fmt.Errorf("download app preview %s/%s/%s: %w", locale, previewType, asset.FileName, err)
 					}
@@ -137,7 +139,11 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 }
 
 func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset) (string, error) {
-	attributes := map[string]any{"fileName": asset.FileName, "fileSize": len(asset.Content), "mimeType": asset.MIMEType}
+	size := asset.Size
+	if size == 0 {
+		size = int64(len(asset.Content))
+	}
+	attributes := map[string]any{"fileName": asset.FileName, "fileSize": size, "mimeType": asset.MIMEType}
 	if asset.PreviewFrameTimeCode != "" {
 		attributes["previewFrameTimeCode"] = asset.PreviewFrameTimeCode
 	}
@@ -149,17 +155,22 @@ func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/appPreviews", body, &response); err != nil {
 		return "", fmt.Errorf("reserve %s: %w", asset.FileName, err)
 	}
-	operations, _ := response.Data.Attributes["uploadOperations"].([]any)
-	for _, raw := range operations {
-		operation, _ := raw.(map[string]any)
-		if err := c.performUploadOperation(ctx, asset.Content, operation); err != nil {
+	operations, err := validatedUploadOperations(response.Data.Attributes["uploadOperations"], size)
+	if err != nil {
+		return "", fmt.Errorf("reserve %s: %w", asset.FileName, err)
+	}
+	for _, operation := range operations {
+		if err := c.performUploadOperation(ctx, asset, operation); err != nil {
 			return "", fmt.Errorf("upload %s: %w", asset.FileName, err)
 		}
 	}
 	checksum := asset.Checksum
-	if checksum == "" {
+	if checksum == "" && len(asset.Content) > 0 {
 		sum := md5.Sum(asset.Content)
 		checksum = hex.EncodeToString(sum[:])
+	}
+	if checksum == "" {
+		return "", fmt.Errorf("commit %s: source checksum is missing", asset.FileName)
 	}
 	commit := map[string]any{"uploaded": true, "sourceFileChecksum": checksum}
 	if asset.PreviewFrameTimeCode != "" {
@@ -169,4 +180,38 @@ func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset
 		return "", fmt.Errorf("commit %s: %w", asset.FileName, err)
 	}
 	return response.Data.ID, nil
+}
+
+func (c *Client) downloadAssetToFile(ctx context.Context, assetURL string) (_ string, _ int64, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
+	if err != nil {
+		return "", 0, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", 0, fmt.Errorf("asset server returned %s", resp.Status)
+	}
+	temporary, err := os.CreateTemp("", "ascdir-app-preview-*")
+	if err != nil {
+		return "", 0, err
+	}
+	path := temporary.Name()
+	defer func() {
+		if err != nil {
+			_ = temporary.Close()
+			_ = os.Remove(path)
+		}
+	}()
+	written, err := io.Copy(temporary, resp.Body)
+	if err != nil {
+		return "", 0, err
+	}
+	if err := temporary.Close(); err != nil {
+		return "", 0, err
+	}
+	return path, written, nil
 }

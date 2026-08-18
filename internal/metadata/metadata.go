@@ -94,6 +94,7 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		field  string
 		path   string
 		data   []byte
+		source string
 	}
 	var operations []writeOperation
 	resolvedPaths := map[string]string{}
@@ -121,7 +122,7 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		for locale, sets := range remote.Screenshots {
 			for displayType, assets := range sets {
 				for _, asset := range assets {
-					if len(asset.Content) == 0 {
+					if len(asset.Content) == 0 && asset.Path == "" {
 						return fmt.Errorf("screenshot %s/%s/%s was not downloaded", locale, displayType, asset.FileName)
 					}
 					relative := filepath.ToSlash(filepath.Join(cfg.Assets.Screenshots, locale, displayType, asset.FileName))
@@ -130,7 +131,10 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 						return fmt.Errorf("resolve screenshot %s: %w", relative, err)
 					}
 					wanted[fullPath] = true
-					operations = append(operations, writeOperation{field: "screenshot", path: fullPath, data: asset.Content})
+					operations = append(operations, writeOperation{field: "screenshot", path: fullPath, data: asset.Content, source: asset.Path})
+					if asset.Path != "" {
+						defer os.Remove(asset.Path)
+					}
 				}
 			}
 		}
@@ -160,7 +164,7 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		for locale, sets := range remote.AppPreviews {
 			for previewType, assets := range sets {
 				for _, asset := range assets {
-					if len(asset.Content) == 0 {
+					if len(asset.Content) == 0 && asset.Path == "" {
 						return fmt.Errorf("app preview %s/%s/%s was not downloaded", locale, previewType, asset.FileName)
 					}
 					relative := filepath.ToSlash(filepath.Join(cfg.Assets.AppPreviews, locale, previewType, asset.FileName))
@@ -169,7 +173,10 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 						return fmt.Errorf("resolve app preview %s: %w", relative, err)
 					}
 					wanted[fullPath] = true
-					operations = append(operations, writeOperation{field: "app_preview", path: fullPath, data: asset.Content})
+					operations = append(operations, writeOperation{field: "app_preview", path: fullPath, data: asset.Content, source: asset.Path})
+					if asset.Path != "" {
+						defer os.Remove(asset.Path)
+					}
 				}
 			}
 		}
@@ -293,7 +300,22 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		}
 	}()
 	for _, operation := range operations {
-		file, err := atomicfile.Prepare(operation.path, operation.data, 0o644)
+		var file *atomicfile.Pending
+		var err error
+		if operation.source == "" {
+			file, err = atomicfile.Prepare(operation.path, operation.data, 0o644)
+		} else {
+			source, openErr := os.Open(operation.source)
+			if openErr != nil {
+				err = openErr
+			} else {
+				file, err = atomicfile.PrepareReader(operation.path, source, 0o644)
+				closeErr := source.Close()
+				if err == nil {
+					err = closeErr
+				}
+			}
+		}
 		if err != nil {
 			if operation.locale == "" {
 				return fmt.Errorf("write %s: %w", operation.field, err)
