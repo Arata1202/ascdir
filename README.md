@@ -183,6 +183,12 @@ localizations:
       privacy_policy_text: metadata/en-US/privacy_policy.md # Markdown file containing the tvOS privacy policy
 ```
 
+Find valid price-point IDs without changing App Store state:
+
+```sh
+ascdir price-points --territory USA
+```
+
 Short, single-line values live under `values`, where the key and generated inline comment describe the expected input. Long-form values live in files referenced under `files`. Paths are relative to the directory containing `ascdir.yaml`.
 
 Remove a key to leave that field unmanaged. An explicitly empty value remains managed and represents a request to clear the remote field; `push` still requires `--allow-empty` when the remote value is non-empty.

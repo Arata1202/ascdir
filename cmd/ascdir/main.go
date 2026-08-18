@@ -31,6 +31,7 @@ type storeClient interface {
 	CheckAuth(context.Context) error
 	FetchMetadata(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
 	ApplyMetadata(context.Context, appstore.Metadata, []string, []appstore.Change) error
+	ListPricePoints(context.Context, string, string) ([]appstore.PricePoint, error)
 }
 
 type commandEnvironment struct {
@@ -90,6 +91,8 @@ func runWithEnvironment(ctx context.Context, args []string, environment commandE
 		return runPush(ctx, args[1:], environment)
 	case "check":
 		return runCheckWithEnvironment(args[1:], environment)
+	case "price-points":
+		return runPricePoints(ctx, args[1:], environment)
 	case "completion":
 		return runCompletion(args[1:], environment.stdout)
 	default:
@@ -129,6 +132,7 @@ Usage:
   ascdir pull  [--config ascdir.yaml] [--dry-run]
   ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions] [--allow-availability-changes] [--allow-commercial-changes]
   ascdir check [--config ascdir.yaml]
+  ascdir price-points --territory USA [--config ascdir.yaml]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
 
@@ -138,6 +142,42 @@ Authentication:
   ASC_PRIVATE_KEY_PATH Path to the AuthKey_*.p8 private key
   ASCDIR_TIMEOUT       HTTP timeout (default: 30s)
 `)
+}
+
+func runPricePoints(ctx context.Context, args []string, environment commandEnvironment) error {
+	fs := flag.NewFlagSet("price-points", flag.ContinueOnError)
+	configPath := fs.String("config", "ascdir.yaml", "configuration file")
+	territory := fs.String("territory", "", "three-letter App Store territory ID")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(fs); err != nil {
+		return err
+	}
+	if len(*territory) != 3 || *territory != strings.ToUpper(*territory) {
+		return errors.New("--territory must be a three-letter uppercase App Store territory ID")
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	client, err := environment.newClient()
+	if err != nil {
+		return err
+	}
+	points, err := client.ListPricePoints(ctx, cfg.App.ID, *territory)
+	if err != nil {
+		return err
+	}
+	if len(points) == 0 {
+		fmt.Fprintf(environment.stdout, "No price points found for %s.\n", *territory)
+		return nil
+	}
+	fmt.Fprintln(environment.stdout, "CUSTOMER_PRICE\tPROCEEDS\tPRICE_POINT_ID")
+	for _, point := range points {
+		fmt.Fprintf(environment.stdout, "%s\t%s\t%s\n", point.CustomerPrice, point.Proceeds, point.ID)
+	}
+	return nil
 }
 
 func runAuth(ctx context.Context, args []string, environment commandEnvironment) error {

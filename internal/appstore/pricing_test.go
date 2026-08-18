@@ -62,3 +62,23 @@ func TestPricingRejectsRemovalOfScheduledPrice(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestListPricePoints(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/apps/app-1/appPricePoints" || r.URL.Query().Get("filter[territory]") != "USA" {
+			http.Error(w, "unexpected request", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeData(t, w, []any{resourceJSON("point-1", "appPricePoints", map[string]any{"customerPrice": "0.99", "proceeds": "0.70"})})
+	}))
+	defer server.Close()
+	points, err := testClient(t, server.URL).ListPricePoints(context.Background(), "app-1", "USA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 1 || points[0].ID != "point-1" || points[0].CustomerPrice != "0.99" {
+		t.Fatalf("points = %#v", points)
+	}
+}

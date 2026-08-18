@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 )
 
 type pricingSchedule struct {
@@ -18,6 +19,36 @@ type scheduledPrice struct {
 	PricePointID string  `json:"price_point_id"`
 	StartDate    *string `json:"start_date,omitempty"`
 	EndDate      *string `json:"end_date,omitempty"`
+}
+
+type PricePoint struct {
+	ID            string
+	CustomerPrice string
+	Proceeds      string
+}
+
+func (c *Client) ListPricePoints(ctx context.Context, appID, territory string) ([]PricePoint, error) {
+	path := "/v1/apps/" + url.PathEscape(appID) + "/appPricePoints?filter%5Bterritory%5D=" + url.QueryEscape(territory) + "&limit=200"
+	resources, err := c.list(ctx, path)
+	if err != nil {
+		return nil, fmt.Errorf("list price points for %s: %w", territory, err)
+	}
+	points := make([]PricePoint, 0, len(resources))
+	for _, resource := range resources {
+		points = append(points, PricePoint{ID: resource.ID, CustomerPrice: stringAttribute(resource, "customerPrice"), Proceeds: stringAttribute(resource, "proceeds")})
+	}
+	sort.Slice(points, func(i, j int) bool {
+		if points[i].CustomerPrice == points[j].CustomerPrice {
+			return points[i].ID < points[j].ID
+		}
+		left, leftErr := strconv.ParseFloat(points[i].CustomerPrice, 64)
+		right, rightErr := strconv.ParseFloat(points[j].CustomerPrice, 64)
+		if leftErr == nil && rightErr == nil {
+			return left < right
+		}
+		return points[i].CustomerPrice < points[j].CustomerPrice
+	})
+	return points, nil
 }
 
 func (c *Client) fetchPricing(ctx context.Context, result *Metadata) error {
