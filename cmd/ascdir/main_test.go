@@ -71,6 +71,7 @@ func TestRunCheck(t *testing.T) {
 	directory := t.TempDir()
 	configPath := filepath.Join(directory, "ascdir.yaml")
 	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	cfg.Metadata = config.MetadataValues{}
 	localization := cfg.Localizations["en-US"]
 	localization.Values.Subtitle = nil
 	localization.Values.Keywords = nil
@@ -188,6 +189,7 @@ func TestRunInitPullAndPush(t *testing.T) {
 	configPath := filepath.Join(directory, "ascdir.yaml")
 	remote := appstore.Metadata{
 		AppID: "app-1", AppInfoID: "info-1", VersionID: "version-1",
+		Values: map[string]string{"copyright": "2026 Example, Inc.", "accessibility_url": "https://example.com/accessibility"},
 		Localizations: map[string]appstore.Localization{
 			"en-US": {Values: map[string]string{
 				"name": "Example", "description": "Description", "support_url": "https://example.com/support",
@@ -282,7 +284,7 @@ localizations:
 	if err := os.WriteFile(configPath, []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	remote := appstore.Metadata{AppID: "app-1", Localizations: map[string]appstore.Localization{
+	remote := appstore.Metadata{AppID: "app-1", Values: map[string]string{"copyright": "2026 Example, Inc."}, Localizations: map[string]appstore.Localization{
 		"en-US": {Values: map[string]string{"name": "Example", "description": "Description"}},
 	}}
 	client := mockStoreClient{
@@ -310,6 +312,7 @@ func TestRunPushRequiresExplicitPermissionToClear(t *testing.T) {
 	directory := t.TempDir()
 	configPath := filepath.Join(directory, "ascdir.yaml")
 	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	cfg.Metadata = config.MetadataValues{}
 	localization := cfg.Localizations["en-US"]
 	empty := ""
 	localization.Values = config.LocaleValues{Subtitle: &empty}

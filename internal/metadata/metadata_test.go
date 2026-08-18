@@ -20,7 +20,9 @@ func TestWriteReadAndDiff(t *testing.T) {
 	configured := cfg.Localizations["en-US"]
 	configured.Values.Subtitle = nil
 	cfg.Localizations["en-US"] = configured
-	remote := appstore.Metadata{Localizations: map[string]appstore.Localization{
+	remote := appstore.Metadata{Values: map[string]string{
+		"copyright": "2026 Example, Inc.", "accessibility_url": "https://example.com/accessibility",
+	}, Localizations: map[string]appstore.Localization{
 		"en-US": {Values: map[string]string{"name": "Example", "subtitle": "Not managed", "description": "Description", "support_url": "https://example.com/support"}},
 	}}
 	if err := WriteLocal(cfg, configPath, remote); err != nil {
@@ -45,6 +47,9 @@ func TestWriteReadAndDiff(t *testing.T) {
 	}
 	if got := local.Localizations["en-US"].Values["name"]; got != "Example" {
 		t.Fatalf("name = %q", got)
+	}
+	if local.Values["copyright"] != "2026 Example, Inc." || local.Values["accessibility_url"] != "https://example.com/accessibility" {
+		t.Fatalf("global metadata = %#v", local.Values)
 	}
 	localization := local.Localizations["en-US"]
 	localization.Values["name"] = "Updated"
@@ -82,6 +87,32 @@ func TestValidateKeywordsUsesAppStoreByteLimit(t *testing.T) {
 	problems := Validate(values)
 	if len(problems) != 1 || !strings.Contains(problems[0], "102 bytes; maximum is 100") {
 		t.Fatalf("problems = %#v", problems)
+	}
+}
+
+func TestValidateGlobalMetadata(t *testing.T) {
+	t.Parallel()
+	values := appstore.Metadata{Values: map[string]string{
+		"copyright": " ", "accessibility_url": "not a URL",
+	}, Localizations: map[string]appstore.Localization{}}
+	problems := Validate(values)
+	if len(problems) != 2 || !strings.Contains(strings.Join(problems, "\n"), "metadata.copyright") || !strings.Contains(strings.Join(problems, "\n"), "metadata.accessibility_url") {
+		t.Fatalf("problems = %#v", problems)
+	}
+}
+
+func TestDiffAndPrintGlobalMetadata(t *testing.T) {
+	t.Parallel()
+	desired := appstore.Metadata{Values: map[string]string{"copyright": "2026 Example, Inc."}}
+	remote := appstore.Metadata{Values: map[string]string{"copyright": "2025 Example, Inc."}}
+	changes := Diff(desired, remote)
+	if len(changes) != 1 || changes[0].Locale != "" || changes[0].Field != "copyright" {
+		t.Fatalf("changes = %#v", changes)
+	}
+	var output bytes.Buffer
+	PrintChanges(&output, changes)
+	if !strings.Contains(output.String(), "metadata.copyright") {
+		t.Fatalf("output = %q", output.String())
 	}
 }
 

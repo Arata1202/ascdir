@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Manage version copyright and the app accessibility URL as optional YAML values
+
 ### Changed
 
 - Store short localized values directly in version 2 YAML configurations while keeping long-form content in Markdown files

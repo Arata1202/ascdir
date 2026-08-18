@@ -124,6 +124,9 @@ app:
   bundle_id: com.example.myapp
   platform: IOS
   version: 1.2.0
+metadata:
+  copyright: "2026 Example, Inc." # Year and rights holder, for example: 2026 Example, Inc.
+  accessibility_url: "https://example.com/accessibility" # Optional public HTTP(S) accessibility information page
 localizations:
   en-US:
     values:
@@ -152,6 +155,11 @@ Unknown configuration keys are rejected so misspelled fields cannot be silently 
 Supported platforms are `IOS`, `MAC_OS`, `TV_OS`, and `VISION_OS`.
 
 ## Managed metadata
+
+Non-localized fields:
+
+- Version copyright
+- App accessibility URL
 
 App-level localization fields:
 
