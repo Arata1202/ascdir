@@ -127,7 +127,7 @@ Usage:
   ascdir auth check
   ascdir auth logout
   ascdir pull  [--config ascdir.yaml] [--dry-run]
-  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions]
+  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions] [--allow-availability-changes]
   ascdir check [--config ascdir.yaml]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
@@ -346,6 +346,7 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	allowEmpty := fs.Bool("allow-empty", false, "allow clearing non-empty remote fields")
 	allowIrreversible := fs.Bool("allow-irreversible", false, "allow changes Apple may make irreversible, such as Made for Kids")
 	allowAssetDeletions := fs.Bool("allow-asset-deletions", false, "allow replacing or deleting remote assets")
+	allowAvailabilityChanges := fs.Bool("allow-availability-changes", false, "allow changes that affect App Store availability")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -400,9 +401,16 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 			}
 		}
 	}
+	if !*allowAvailabilityChanges {
+		for _, change := range changes {
+			if strings.HasPrefix(change.Field, "availability.") {
+				return errors.New("the change would modify App Store availability; review with --dry-run and rerun with --allow-availability-changes")
+			}
+		}
+	}
 	if !*allowIrreversible {
 		for _, change := range changes {
-			if change.Locale == "" && (change.Field == "kids_age_band" || change.DeviceFamily != "" && change.Field == "published" && change.After == "true") {
+			if change.Locale == "" && (change.Field == "kids_age_band" || strings.HasSuffix(change.Field, ".pre_order_enabled") && change.After == "true" || change.DeviceFamily != "" && change.Field == "published" && change.After == "true") {
 				return errors.New("the change may be irreversible after App Review or publication; review with --dry-run and rerun with --allow-irreversible")
 			}
 		}
@@ -459,7 +467,7 @@ func requireNoArgs(fs *flag.FlagSet) error {
 }
 
 func fetchOptions(cfg config.Config) appstore.FetchOptions {
-	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != ""}
+	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != "", Availability: cfg.Availability != nil}
 }
 
 func newClient(stderr io.Writer) (*appstore.Client, error) {

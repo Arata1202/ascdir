@@ -41,7 +41,7 @@ const bashCompletion = `_ascdir() {
     case "${COMP_WORDS[1]}" in
       init) COMPREPLY=($(compgen -W "--bundle-id --version --platform --locale --config --force" -- "${current}")) ;;
       pull) COMPREPLY=($(compgen -W "--config --dry-run" -- "${current}")) ;;
-      push) COMPREPLY=($(compgen -W "--config --dry-run --allow-empty" -- "${current}")) ;;
+      push) COMPREPLY=($(compgen -W "--config --dry-run --allow-empty --allow-irreversible --allow-availability-changes" -- "${current}")) ;;
       check) COMPREPLY=($(compgen -W "--config" -- "${current}")) ;;
     esac
   fi
@@ -66,7 +66,7 @@ _ascdir() {
     case ${words[2]} in
       init) _values 'option' --bundle-id --version --platform --locale --config --force ;;
       pull) _values 'option' --config --dry-run ;;
-      push) _values 'option' --config --dry-run --allow-empty ;;
+      push) _values 'option' --config --dry-run --allow-empty --allow-irreversible --allow-availability-changes ;;
       check) _values 'option' --config ;;
       *) _files ;;
     esac
@@ -88,6 +88,8 @@ complete -c ascdir -n '__fish_seen_subcommand_from init pull push check' -l conf
 complete -c ascdir -n '__fish_seen_subcommand_from init' -l force
 complete -c ascdir -n '__fish_seen_subcommand_from pull push' -l dry-run
 complete -c ascdir -n '__fish_seen_subcommand_from push' -l allow-empty
+complete -c ascdir -n '__fish_seen_subcommand_from push' -l allow-irreversible
+complete -c ascdir -n '__fish_seen_subcommand_from push' -l allow-availability-changes
 `
 
 const powershellCompletion = `Register-ArgumentCompleter -Native -CommandName ascdir -ScriptBlock {
@@ -104,7 +106,7 @@ const powershellCompletion = `Register-ArgumentCompleter -Native -CommandName as
   } elseif ($elements[1].Value -eq 'pull') {
     '--config','--dry-run'
   } elseif ($elements[1].Value -eq 'push') {
-    '--config','--dry-run','--allow-empty'
+    '--config','--dry-run','--allow-empty','--allow-irreversible','--allow-availability-changes'
   } elseif ($elements[1].Value -eq 'check') {
     '--config'
   } else { @() }

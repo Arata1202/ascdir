@@ -35,18 +35,20 @@ func WithTimeout(timeout time.Duration) Option {
 }
 
 type Metadata struct {
-	AppID              string
-	AppInfoID          string
-	VersionID          string
-	AgeRatingID        string
-	LicenseAgreementID string
-	Accessibility      map[string]AccessibilityDeclaration
-	Screenshots        map[string]map[string][]Asset
-	ScreenshotSetIDs   map[string]map[string]string
-	AppPreviews        map[string]map[string][]Asset
-	AppPreviewSetIDs   map[string]map[string]string
-	Values             map[string]string
-	Localizations      map[string]Localization
+	AppID                    string
+	AppInfoID                string
+	VersionID                string
+	AgeRatingID              string
+	LicenseAgreementID       string
+	Accessibility            map[string]AccessibilityDeclaration
+	Screenshots              map[string]map[string][]Asset
+	ScreenshotSetIDs         map[string]map[string]string
+	AppPreviews              map[string]map[string][]Asset
+	AppPreviewSetIDs         map[string]map[string]string
+	AvailabilityID           string
+	TerritoryAvailabilityIDs map[string]string
+	Values                   map[string]string
+	Localizations            map[string]Localization
 }
 
 // FetchOptions limits optional App Store Connect resources to the features a
@@ -59,6 +61,7 @@ type FetchOptions struct {
 	Screenshots      bool
 	DownloadAssets   bool
 	AppPreviews      bool
+	Availability     bool
 }
 
 type Asset struct {
@@ -166,10 +169,15 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	if err != nil {
 		return Metadata{}, err
 	}
-	result := Metadata{AppID: app.ID, Values: map[string]string{}, Accessibility: map[string]AccessibilityDeclaration{}, Screenshots: map[string]map[string][]Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Localizations: map[string]Localization{}}
+	result := Metadata{AppID: app.ID, Values: map[string]string{}, Accessibility: map[string]AccessibilityDeclaration{}, Screenshots: map[string]map[string][]Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, TerritoryAvailabilityIDs: map[string]string{}, Localizations: map[string]Localization{}}
 	copyAttributes(result.Values, app.Attributes, appFields)
 	if options.LicenseAgreement {
 		if err := c.fetchLicenseAgreement(ctx, &result); err != nil {
+			return Metadata{}, err
+		}
+	}
+	if options.Availability {
+		if err := c.fetchAvailability(ctx, &result); err != nil {
 			return Metadata{}, err
 		}
 	}
@@ -356,6 +364,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		if change.AssetSet != nil {
 			continue
 		}
+		if strings.HasPrefix(change.Field, "availability.") {
+			continue
+		}
 		if change.Locale == "" {
 			if change.DeviceFamily != "" {
 				deviceFamily, field := change.DeviceFamily, change.Field
@@ -413,6 +424,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		return err
 	}
 	if err := c.applyAppPreviewChanges(ctx, changes); err != nil {
+		return err
+	}
+	if err := c.applyAvailabilityChanges(ctx, remote, changes); err != nil {
 		return err
 	}
 	globalGroups := make([]string, 0, len(global))

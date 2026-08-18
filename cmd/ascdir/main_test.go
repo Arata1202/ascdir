@@ -485,6 +485,48 @@ func TestRunPushProtectsAccessibilityPublicationState(t *testing.T) {
 	})
 }
 
+func TestRunPushRequiresAvailabilityConfirmation(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	cfg.Metadata, cfg.Categories = config.MetadataValues{}, config.CategoryValues{}
+	available := false
+	cfg.Availability = &config.AvailabilityValues{Territories: map[string]config.TerritoryAvailability{
+		"USA": {Available: &available},
+	}}
+	localization := cfg.Localizations["en-US"]
+	name := "Example"
+	localization.Values, localization.Files = config.LocaleValues{Name: &name}, config.LocaleFiles{}
+	cfg.Localizations["en-US"] = localization
+	if err := config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	remote := appstore.Metadata{
+		AppID: "app-1", AppInfoID: "info-1", VersionID: "version-1", AvailabilityID: "availability-1",
+		TerritoryAvailabilityIDs: map[string]string{"USA": "territory-1"},
+		Values:                   map[string]string{"availability.territories.USA.available": "true"},
+		Localizations:            map[string]appstore.Localization{"en-US": {AppInfoLocalizationID: "info-loc-1", VersionLocalizationID: "version-loc-1", Values: map[string]string{"name": "Example"}}},
+	}
+	applyCalls := 0
+	client := mockStoreClient{
+		fetchMetadata: func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error) {
+			return remote, nil
+		},
+		applyMetadata: func(context.Context, appstore.Metadata, []string, []appstore.Change) error { applyCalls++; return nil },
+	}
+	environment, _, _ := testEnvironment(client)
+	args := []string{"push", "--config", path}
+	if err := runWithEnvironment(context.Background(), args, environment); err == nil || !strings.Contains(err.Error(), "--allow-availability-changes") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := runWithEnvironment(context.Background(), append(args, "--allow-availability-changes"), environment); err != nil {
+		t.Fatal(err)
+	}
+	if applyCalls != 1 {
+		t.Fatalf("apply calls = %d", applyCalls)
+	}
+}
+
 func TestRunInitReportsUnexpectedStatError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation commonly requires elevated privileges on Windows")

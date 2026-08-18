@@ -25,6 +25,7 @@ type Config struct {
 	Accessibility    map[string]AccessibilityValues `yaml:"accessibility,omitempty"`
 	LicenseAgreement *LicenseAgreementValues        `yaml:"license_agreement,omitempty"`
 	Assets           AssetPaths                     `yaml:"assets,omitempty"`
+	Availability     *AvailabilityValues            `yaml:"availability,omitempty"`
 	Localizations    map[string]Localization        `yaml:"localizations"`
 }
 
@@ -49,6 +50,64 @@ type AssetPaths struct {
 	Screenshots       string            `yaml:"screenshots,omitempty"`
 	AppPreviews       string            `yaml:"app_previews,omitempty"`
 	PreviewFrameTimes map[string]string `yaml:"preview_frame_times,omitempty"`
+}
+
+type AvailabilityValues struct {
+	AvailableInNewTerritories *bool                            `yaml:"available_in_new_territories,omitempty"`
+	Territories               map[string]TerritoryAvailability `yaml:"territories"`
+}
+
+type TerritoryAvailability struct {
+	Available       *bool   `yaml:"available,omitempty"`
+	ReleaseDate     *string `yaml:"release_date,omitempty"`
+	PreOrderEnabled *bool   `yaml:"pre_order_enabled,omitempty"`
+}
+
+func (v AvailabilityValues) Map() map[string]string {
+	values := map[string]string{}
+	if v.AvailableInNewTerritories != nil {
+		values["availability.available_in_new_territories"] = strconv.FormatBool(*v.AvailableInNewTerritories)
+	}
+	for territory, availability := range v.Territories {
+		prefix := "availability.territories." + territory + "."
+		if availability.Available != nil {
+			values[prefix+"available"] = strconv.FormatBool(*availability.Available)
+		}
+		if availability.ReleaseDate != nil {
+			values[prefix+"release_date"] = *availability.ReleaseDate
+		}
+		if availability.PreOrderEnabled != nil {
+			values[prefix+"pre_order_enabled"] = strconv.FormatBool(*availability.PreOrderEnabled)
+		}
+	}
+	return values
+}
+
+func (v *AvailabilityValues) SetManaged(field, value string) {
+	if field == "availability.available_in_new_territories" {
+		parsed, _ := strconv.ParseBool(value)
+		v.AvailableInNewTerritories = &parsed
+		return
+	}
+	parts := strings.Split(field, ".")
+	if len(parts) != 4 || parts[0] != "availability" || parts[1] != "territories" {
+		return
+	}
+	if v.Territories == nil {
+		v.Territories = map[string]TerritoryAvailability{}
+	}
+	territory := v.Territories[parts[2]]
+	switch parts[3] {
+	case "available":
+		parsed, _ := strconv.ParseBool(value)
+		territory.Available = &parsed
+	case "release_date":
+		territory.ReleaseDate = stringPointer(value)
+	case "pre_order_enabled":
+		parsed, _ := strconv.ParseBool(value)
+		territory.PreOrderEnabled = &parsed
+	}
+	v.Territories[parts[2]] = territory
 }
 
 // AgeRatingValues mirrors Apple's age rating declaration. Pointer values make
@@ -389,6 +448,11 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if cfg.Availability != nil {
+		if err := replaceMappingValue(root, "availability", cfg.Availability); err != nil {
+			return nil, err
+		}
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
@@ -544,6 +608,19 @@ func (c Config) Validate() error {
 		}
 		if len(declaration.Map()) == 0 {
 			return fmt.Errorf("accessibility.%s must manage at least one field", deviceFamily)
+		}
+	}
+	if c.Availability != nil {
+		if len(c.Availability.Territories) == 0 {
+			return errors.New("availability.territories must contain at least one managed territory")
+		}
+		for territory, availability := range c.Availability.Territories {
+			if len(territory) != 3 || territory != strings.ToUpper(territory) {
+				return fmt.Errorf("invalid availability territory %q; use an App Store territory ID", territory)
+			}
+			if availability.Available == nil && availability.ReleaseDate == nil && availability.PreOrderEnabled == nil {
+				return fmt.Errorf("availability.territories.%s must manage at least one field", territory)
+			}
 		}
 	}
 	seen := map[string]string{}
