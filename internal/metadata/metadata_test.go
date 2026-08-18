@@ -71,6 +71,28 @@ func TestWriteReadAndDiff(t *testing.T) {
 	}
 }
 
+func TestWriteLocalCreatesPrivacyPolicyTextForTVOS(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "TV_OS", "1.0.0", []string{"en-US"})
+	remote := appstore.Metadata{Localizations: map[string]appstore.Localization{
+		"en-US": {Values: map[string]string{"privacy_policy_text": "Privacy policy"}},
+	}}
+
+	if err := WriteLocal(cfg, configPath, remote); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "metadata", "en-US", "privacy_policy.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("tvOS privacy policy text was not written: %v", err)
+	}
+	if got := string(data); got != "Privacy policy" {
+		t.Fatalf("privacy policy text = %q", got)
+	}
+}
+
 func TestValidate(t *testing.T) {
 	t.Parallel()
 	values := appstore.Metadata{Localizations: map[string]appstore.Localization{
