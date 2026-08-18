@@ -31,6 +31,7 @@ type storeClient interface {
 	CheckAuth(context.Context) error
 	FetchMetadata(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
 	ApplyMetadata(context.Context, appstore.Metadata, []string, []appstore.Change) error
+	ListPricePoints(context.Context, string, string) ([]appstore.PricePoint, error)
 }
 
 type commandEnvironment struct {
@@ -90,6 +91,8 @@ func runWithEnvironment(ctx context.Context, args []string, environment commandE
 		return runPush(ctx, args[1:], environment)
 	case "check":
 		return runCheckWithEnvironment(args[1:], environment)
+	case "price-points":
+		return runPricePoints(ctx, args[1:], environment)
 	case "completion":
 		return runCompletion(args[1:], environment.stdout)
 	default:
@@ -127,8 +130,9 @@ Usage:
   ascdir auth check
   ascdir auth logout
   ascdir pull  [--config ascdir.yaml] [--dry-run]
-  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions] [--allow-availability-changes]
+  ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions] [--allow-availability-changes] [--allow-commercial-changes]
   ascdir check [--config ascdir.yaml]
+  ascdir price-points --territory USA [--config ascdir.yaml]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
 
@@ -138,6 +142,42 @@ Authentication:
   ASC_PRIVATE_KEY_PATH Path to the AuthKey_*.p8 private key
   ASCDIR_TIMEOUT       HTTP timeout (default: 30s)
 `)
+}
+
+func runPricePoints(ctx context.Context, args []string, environment commandEnvironment) error {
+	fs := flag.NewFlagSet("price-points", flag.ContinueOnError)
+	configPath := fs.String("config", "ascdir.yaml", "configuration file")
+	territory := fs.String("territory", "", "three-letter App Store territory ID")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(fs); err != nil {
+		return err
+	}
+	if len(*territory) != 3 || *territory != strings.ToUpper(*territory) {
+		return errors.New("--territory must be a three-letter uppercase App Store territory ID")
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	client, err := environment.newClient()
+	if err != nil {
+		return err
+	}
+	points, err := client.ListPricePoints(ctx, cfg.App.ID, *territory)
+	if err != nil {
+		return err
+	}
+	if len(points) == 0 {
+		fmt.Fprintf(environment.stdout, "No price points found for %s.\n", *territory)
+		return nil
+	}
+	fmt.Fprintln(environment.stdout, "CUSTOMER_PRICE\tPROCEEDS\tPRICE_POINT_ID")
+	for _, point := range points {
+		fmt.Fprintf(environment.stdout, "%s\t%s\t%s\n", point.CustomerPrice, point.Proceeds, point.ID)
+	}
+	return nil
 }
 
 func runAuth(ctx context.Context, args []string, environment commandEnvironment) error {
@@ -347,6 +387,7 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	allowIrreversible := fs.Bool("allow-irreversible", false, "allow changes Apple may make irreversible, such as Made for Kids")
 	allowAssetDeletions := fs.Bool("allow-asset-deletions", false, "allow replacing or deleting remote assets")
 	allowAvailabilityChanges := fs.Bool("allow-availability-changes", false, "allow changes that affect App Store availability")
+	allowCommercialChanges := fs.Bool("allow-commercial-changes", false, "allow price changes that affect storefront sales")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -389,6 +430,11 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	if *dryRun {
 		fmt.Fprintf(environment.stdout, "Dry run: %d operation(s) not applied.\n", operationCount)
 		return nil
+	}
+	for _, change := range changes {
+		if change.Field == "pricing.schedule" && !*allowCommercialChanges {
+			return errors.New("the change would modify App Store pricing; review with --dry-run and rerun with --allow-commercial-changes")
+		}
 	}
 	clears := metadata.ClearingChanges(changes)
 	if len(clears) > 0 && !*allowEmpty {
@@ -467,7 +513,7 @@ func requireNoArgs(fs *flag.FlagSet) error {
 }
 
 func fetchOptions(cfg config.Config) appstore.FetchOptions {
-	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != "", Availability: cfg.Availability != nil}
+	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != "", Availability: cfg.Availability != nil, Pricing: cfg.Pricing != nil}
 }
 
 func newClient(stderr io.Writer) (*appstore.Client, error) {

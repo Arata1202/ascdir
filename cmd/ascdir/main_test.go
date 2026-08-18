@@ -23,9 +23,17 @@ import (
 )
 
 type mockStoreClient struct {
-	checkAuth     func(context.Context) error
-	fetchMetadata func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
-	applyMetadata func(context.Context, appstore.Metadata, []string, []appstore.Change) error
+	checkAuth       func(context.Context) error
+	fetchMetadata   func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
+	applyMetadata   func(context.Context, appstore.Metadata, []string, []appstore.Change) error
+	listPricePoints func(context.Context, string, string) ([]appstore.PricePoint, error)
+}
+
+func (m mockStoreClient) ListPricePoints(ctx context.Context, appID, territory string) ([]appstore.PricePoint, error) {
+	if m.listPricePoints == nil {
+		return nil, errors.New("ListPricePoints should not be called")
+	}
+	return m.listPricePoints(ctx, appID, territory)
 }
 
 func (m mockStoreClient) CheckAuth(ctx context.Context) error {
@@ -63,6 +71,30 @@ func TestVersionString(t *testing.T) {
 	for _, want := range []string{"v1.0.0", "abc123", "2026-08-17"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("versionString() = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestRunPricePoints(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	if err := config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	client := mockStoreClient{listPricePoints: func(_ context.Context, appID, territory string) ([]appstore.PricePoint, error) {
+		if appID != "app-1" || territory != "USA" {
+			t.Fatalf("unexpected lookup: %s %s", appID, territory)
+		}
+		return []appstore.PricePoint{{ID: "point-1", CustomerPrice: "0.99", Proceeds: "0.70"}}, nil
+	}}
+	environment, stdout, _ := testEnvironment(client)
+	if err := runWithEnvironment(context.Background(), []string{"price-points", "--config", path, "--territory", "USA"}, environment); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"CUSTOMER_PRICE", "0.99", "point-1"} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("output %q does not contain %q", stdout.String(), expected)
 		}
 	}
 }

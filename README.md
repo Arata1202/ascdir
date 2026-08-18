@@ -160,6 +160,12 @@ availability:
       available: true
       release_date: "2026-09-01" # Optional YYYY-MM-DD release or preorder date
       pre_order_enabled: false
+pricing:
+  base_territory: USA
+  scheduled_prices:
+    - price_point_id: eyJ...
+      start_date: "2026-09-01"
+      end_date: "2026-12-31"
 localizations:
   en-US:
     values:
@@ -175,6 +181,12 @@ localizations:
       promotional_text: metadata/en-US/promotional_text.md # Markdown file containing promotional text
       whats_new: metadata/en-US/whats_new.md # Markdown file containing release notes
       privacy_policy_text: metadata/en-US/privacy_policy.md # Markdown file containing the tvOS privacy policy
+```
+
+Find valid price-point IDs without changing App Store state:
+
+```sh
+ascdir price-points --territory USA
 ```
 
 Short, single-line values live under `values`, where the key and generated inline comment describe the expected input. Long-form values live in files referenced under `files`. Paths are relative to the directory containing `ascdir.yaml`.
@@ -202,6 +214,7 @@ Non-localized fields:
 - App screenshots, including locale, display type, and order
 - App Preview videos, display order, and optional poster-frame timecodes
 - Territory availability, release dates, and preorder settings
+- Base-territory pricing and scheduled price changes
 
 App-level localization fields:
 

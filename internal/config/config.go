@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Arata1202/ascdir/internal/atomicfile"
 	"gopkg.in/yaml.v3"
@@ -26,6 +28,7 @@ type Config struct {
 	LicenseAgreement *LicenseAgreementValues        `yaml:"license_agreement,omitempty"`
 	Assets           AssetPaths                     `yaml:"assets,omitempty"`
 	Availability     *AvailabilityValues            `yaml:"availability,omitempty"`
+	Pricing          *PricingValues                 `yaml:"pricing,omitempty"`
 	Localizations    map[string]Localization        `yaml:"localizations"`
 }
 
@@ -108,6 +111,42 @@ func (v *AvailabilityValues) SetManaged(field, value string) {
 		territory.PreOrderEnabled = &parsed
 	}
 	v.Territories[parts[2]] = territory
+}
+
+type PricingValues struct {
+	BaseTerritory   string           `yaml:"base_territory" json:"base_territory"`
+	ScheduledPrices []ScheduledPrice `yaml:"scheduled_prices" json:"scheduled_prices"`
+}
+
+type ScheduledPrice struct {
+	PricePointID string  `yaml:"price_point_id" json:"price_point_id"`
+	StartDate    *string `yaml:"start_date,omitempty" json:"start_date,omitempty"`
+	EndDate      *string `yaml:"end_date,omitempty" json:"end_date,omitempty"`
+}
+
+func (v PricingValues) Map() map[string]string {
+	canonical := v
+	canonical.ScheduledPrices = append([]ScheduledPrice(nil), v.ScheduledPrices...)
+	sort.SliceStable(canonical.ScheduledPrices, func(i, j int) bool {
+		return scheduledPriceConfigKey(canonical.ScheduledPrices[i]) < scheduledPriceConfigKey(canonical.ScheduledPrices[j])
+	})
+	data, _ := json.Marshal(canonical)
+	return map[string]string{"pricing.schedule": string(data)}
+}
+
+func scheduledPriceConfigKey(price ScheduledPrice) string {
+	start, end := "", ""
+	if price.StartDate != nil {
+		start = *price.StartDate
+	}
+	if price.EndDate != nil {
+		end = *price.EndDate
+	}
+	return start + "\x00" + end + "\x00" + price.PricePointID
+}
+
+func (v *PricingValues) SetManaged(value string) error {
+	return json.Unmarshal([]byte(value), v)
 }
 
 // AgeRatingValues mirrors Apple's age rating declaration. Pointer values make
@@ -453,6 +492,11 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if cfg.Pricing != nil {
+		if err := replaceMappingValue(root, "pricing", cfg.Pricing); err != nil {
+			return nil, err
+		}
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
@@ -620,6 +664,44 @@ func (c Config) Validate() error {
 			}
 			if availability.Available == nil && availability.ReleaseDate == nil && availability.PreOrderEnabled == nil {
 				return fmt.Errorf("availability.territories.%s must manage at least one field", territory)
+			}
+		}
+	}
+	if c.Pricing != nil {
+		if len(c.Pricing.BaseTerritory) != 3 || c.Pricing.BaseTerritory != strings.ToUpper(c.Pricing.BaseTerritory) {
+			return fmt.Errorf("invalid pricing.base_territory %q; use an App Store territory ID", c.Pricing.BaseTerritory)
+		}
+		if len(c.Pricing.ScheduledPrices) == 0 {
+			return errors.New("pricing.scheduled_prices must contain at least one price")
+		}
+		seenPrices := map[string]bool{}
+		for index, price := range c.Pricing.ScheduledPrices {
+			if strings.TrimSpace(price.PricePointID) == "" {
+				return fmt.Errorf("pricing.scheduled_prices[%d].price_point_id is required", index)
+			}
+			key := scheduledPriceConfigKey(price)
+			if seenPrices[key] {
+				return fmt.Errorf("pricing.scheduled_prices[%d] duplicates another scheduled price", index)
+			}
+			seenPrices[key] = true
+			var start, end time.Time
+			var startSet, endSet bool
+			if price.StartDate != nil {
+				parsed, err := time.Parse("2006-01-02", *price.StartDate)
+				if err != nil {
+					return fmt.Errorf("pricing.scheduled_prices[%d].start_date must use YYYY-MM-DD", index)
+				}
+				start, startSet = parsed, true
+			}
+			if price.EndDate != nil {
+				parsed, err := time.Parse("2006-01-02", *price.EndDate)
+				if err != nil {
+					return fmt.Errorf("pricing.scheduled_prices[%d].end_date must use YYYY-MM-DD", index)
+				}
+				end, endSet = parsed, true
+			}
+			if startSet && endSet && end.Before(start) {
+				return fmt.Errorf("pricing.scheduled_prices[%d].end_date must not precede start_date", index)
 			}
 		}
 	}

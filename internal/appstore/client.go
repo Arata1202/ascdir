@@ -47,6 +47,7 @@ type Metadata struct {
 	AppPreviewSetIDs         map[string]map[string]string
 	AvailabilityID           string
 	TerritoryAvailabilityIDs map[string]string
+	PriceScheduleID          string
 	Values                   map[string]string
 	Localizations            map[string]Localization
 }
@@ -62,6 +63,7 @@ type FetchOptions struct {
 	DownloadAssets   bool
 	AppPreviews      bool
 	Availability     bool
+	Pricing          bool
 }
 
 type Asset struct {
@@ -178,6 +180,11 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	}
 	if options.Availability {
 		if err := c.fetchAvailability(ctx, &result); err != nil {
+			return Metadata{}, err
+		}
+	}
+	if options.Pricing {
+		if err := c.fetchPricing(ctx, &result); err != nil {
 			return Metadata{}, err
 		}
 	}
@@ -367,6 +374,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		if strings.HasPrefix(change.Field, "availability.") {
 			continue
 		}
+		if change.Field == "pricing.schedule" {
+			continue
+		}
 		if change.Locale == "" {
 			if change.DeviceFamily != "" {
 				deviceFamily, field := change.DeviceFamily, change.Field
@@ -427,6 +437,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		return err
 	}
 	if err := c.applyAvailabilityChanges(ctx, remote, changes); err != nil {
+		return err
+	}
+	if err := c.applyPricingChanges(ctx, remote, changes); err != nil {
 		return err
 	}
 	globalGroups := make([]string, 0, len(global))
