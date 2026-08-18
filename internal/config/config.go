@@ -33,8 +33,9 @@ type App struct {
 // distinguish an unmanaged field from a managed field whose desired value is
 // empty.
 type MetadataValues struct {
-	Copyright        *string `yaml:"copyright,omitempty"`
-	AccessibilityURL *string `yaml:"accessibility_url,omitempty"`
+	Copyright                *string `yaml:"copyright,omitempty"`
+	AccessibilityURL         *string `yaml:"accessibility_url,omitempty"`
+	ContentRightsDeclaration *string `yaml:"content_rights_declaration,omitempty"`
 }
 
 // Localization keeps short scalar values in YAML and long-form content in
@@ -90,8 +91,9 @@ func New(appID, bundleID, platform, version string, locales []string) Config {
 		Version: CurrentVersion,
 		App:     App{ID: appID, BundleID: bundleID, Platform: platform, Version: version},
 		Metadata: MetadataValues{
-			Copyright:        stringPointer(""),
-			AccessibilityURL: stringPointer(""),
+			Copyright:                stringPointer(""),
+			AccessibilityURL:         stringPointer(""),
+			ContentRightsDeclaration: stringPointer(""),
 		},
 		Localizations: make(map[string]Localization, len(locales)),
 	}
@@ -341,8 +343,9 @@ func addSchemaComments(document *yaml.Node) {
 		"privacy_policy_text": "Markdown file containing the tvOS privacy policy",
 	}
 	addMappingComments(mappingValue(root, "metadata"), map[string]string{
-		"copyright":         "Year and rights holder, for example: 2026 Example, Inc.",
-		"accessibility_url": "Optional public HTTP(S) accessibility information page",
+		"copyright":                  "Year and rights holder, for example: 2026 Example, Inc.",
+		"accessibility_url":          "Optional public HTTP(S) accessibility information page",
+		"content_rights_declaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT or USES_THIRD_PARTY_CONTENT",
 	})
 	for index := 0; index+1 < len(localizations.Content); index += 2 {
 		locale := localizations.Content[index+1]
@@ -488,8 +491,9 @@ func (v MetadataValues) Map() map[string]string {
 
 func (v MetadataValues) Pointers() map[string]*string {
 	return map[string]*string{
-		"copyright":         v.Copyright,
-		"accessibility_url": v.AccessibilityURL,
+		"copyright":                  v.Copyright,
+		"accessibility_url":          v.AccessibilityURL,
+		"content_rights_declaration": v.ContentRightsDeclaration,
 	}
 }
 
@@ -500,6 +504,8 @@ func (v *MetadataValues) SetManaged(field, value string) {
 		v.Copyright = pointer
 	case "accessibility_url":
 		v.AccessibilityURL = pointer
+	case "content_rights_declaration":
+		v.ContentRightsDeclaration = pointer
 	}
 }
 

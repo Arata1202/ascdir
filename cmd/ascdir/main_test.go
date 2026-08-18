@@ -189,7 +189,7 @@ func TestRunInitPullAndPush(t *testing.T) {
 	configPath := filepath.Join(directory, "ascdir.yaml")
 	remote := appstore.Metadata{
 		AppID: "app-1", AppInfoID: "info-1", VersionID: "version-1",
-		Values: map[string]string{"copyright": "2026 Example, Inc.", "accessibility_url": "https://example.com/accessibility"},
+		Values: map[string]string{"copyright": "2026 Example, Inc.", "accessibility_url": "https://example.com/accessibility", "content_rights_declaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT"},
 		Localizations: map[string]appstore.Localization{
 			"en-US": {Values: map[string]string{
 				"name": "Example", "description": "Description", "support_url": "https://example.com/support",

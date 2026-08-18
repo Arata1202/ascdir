@@ -127,6 +127,7 @@ app:
 metadata:
   copyright: "2026 Example, Inc." # Year and rights holder, for example: 2026 Example, Inc.
   accessibility_url: "https://example.com/accessibility" # Optional public HTTP(S) accessibility information page
+  content_rights_declaration: DOES_NOT_USE_THIRD_PARTY_CONTENT # Whether the app uses third-party content
 localizations:
   en-US:
     values:
@@ -160,6 +161,7 @@ Non-localized fields:
 
 - Version copyright
 - App accessibility URL
+- Content rights declaration
 
 App-level localization fields:
 

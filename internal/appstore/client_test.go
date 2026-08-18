@@ -25,7 +25,7 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps":
-			writeData(t, w, []any{resourceJSON("app-1", "apps", map[string]any{"bundleId": "com.example.app", "accessibilityUrl": "https://example.com/accessibility"})})
+			writeData(t, w, []any{resourceJSON("app-1", "apps", map[string]any{"bundleId": "com.example.app", "accessibilityUrl": "https://example.com/accessibility", "contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT"})})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/apps/app-1/appInfos":
 			writeData(t, w, []any{resourceJSON("info-1", "appInfos", nil)})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/appInfos/info-1/appInfoLocalizations":
@@ -62,9 +62,13 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 	if remote.Values["copyright"] != "2025 Example, Inc." || remote.Values["accessibility_url"] != "https://example.com/accessibility" {
 		t.Fatalf("global metadata = %#v", remote.Values)
 	}
+	if remote.Values["content_rights_declaration"] != "DOES_NOT_USE_THIRD_PARTY_CONTENT" {
+		t.Fatalf("content rights declaration = %q", remote.Values["content_rights_declaration"])
+	}
 	changes := []Change{
 		{Field: "copyright", Before: "2025 Example, Inc.", After: "2026 Example, Inc."},
 		{Field: "accessibility_url", Before: "https://example.com/accessibility", After: "https://example.com/a11y"},
+		{Field: "content_rights_declaration", Before: "DOES_NOT_USE_THIRD_PARTY_CONTENT", After: "USES_THIRD_PARTY_CONTENT"},
 		{Locale: "en-US", Field: "name", Before: "Old Name", After: "New Name"},
 		{Locale: "en-US", Field: "description", Before: "Old description", After: "New description"},
 	}
@@ -79,6 +83,11 @@ func TestFetchAndApplyMetadata(t *testing.T) {
 		if mutationPaths[index] != wantPaths[index] {
 			t.Fatalf("mutation paths = %#v, want %#v", mutationPaths, wantPaths)
 		}
+	}
+	data := mutations[0]["data"].(map[string]any)
+	attributes := data["attributes"].(map[string]any)
+	if attributes["contentRightsDeclaration"] != "USES_THIRD_PARTY_CONTENT" {
+		t.Fatalf("app attributes = %#v", attributes)
 	}
 }
 

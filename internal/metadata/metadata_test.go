@@ -93,10 +93,10 @@ func TestValidateKeywordsUsesAppStoreByteLimit(t *testing.T) {
 func TestValidateGlobalMetadata(t *testing.T) {
 	t.Parallel()
 	values := appstore.Metadata{Values: map[string]string{
-		"copyright": " ", "accessibility_url": "not a URL",
+		"copyright": " ", "accessibility_url": "not a URL", "content_rights_declaration": "UNKNOWN",
 	}, Localizations: map[string]appstore.Localization{}}
 	problems := Validate(values)
-	if len(problems) != 2 || !strings.Contains(strings.Join(problems, "\n"), "metadata.copyright") || !strings.Contains(strings.Join(problems, "\n"), "metadata.accessibility_url") {
+	if len(problems) != 3 || !strings.Contains(strings.Join(problems, "\n"), "metadata.copyright") || !strings.Contains(strings.Join(problems, "\n"), "metadata.accessibility_url") || !strings.Contains(strings.Join(problems, "\n"), "metadata.content_rights_declaration") {
 		t.Fatalf("problems = %#v", problems)
 	}
 }
