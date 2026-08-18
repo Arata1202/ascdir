@@ -276,7 +276,7 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 		locales = []string{normalizedLocale}
 	}
 	cfg := config.New(remote.AppID, normalizedBundleID, normalizedPlatform, normalizedVersion, locales)
-	if err := metadata.WriteLocal(cfg, *configPath, remote); err != nil {
+	if err := metadata.WriteLocalNew(cfg, *configPath, remote); err != nil {
 		return err
 	}
 	fmt.Fprintf(environment.stdout, "Created %s with %d localization(s).\n", *configPath, len(locales))

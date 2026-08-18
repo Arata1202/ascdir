@@ -44,6 +44,17 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 }
 
 func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) error {
+	return writeLocal(cfg, configPath, remote, false)
+}
+
+// WriteLocalNew writes a newly initialized project. Unlike pull, init owns the
+// complete configuration and intentionally replaces any file accepted through
+// --force instead of attempting to preserve its previous schema or comments.
+func WriteLocalNew(cfg config.Config, configPath string, remote appstore.Metadata) error {
+	return writeLocal(cfg, configPath, remote, true)
+}
+
+func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, replaceConfig bool) error {
 	base := filepath.Dir(filepath.Clean(configPath))
 	type writeOperation struct {
 		locale string
@@ -88,7 +99,13 @@ func WriteLocal(cfg config.Config, configPath string, remote appstore.Metadata) 
 			}
 			updated.Localizations[locale] = localization
 		}
-		data, err := config.Encode(updated)
+		var data []byte
+		var err error
+		if replaceConfig {
+			data, err = config.Encode(updated)
+		} else {
+			data, err = config.EncodeUpdatedValues(configPath, updated)
+		}
 		if err != nil {
 			return fmt.Errorf("encode configuration: %w", err)
 		}

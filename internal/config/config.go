@@ -194,6 +194,9 @@ func Encode(cfg Config) ([]byte, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if cfg.Version == "1" {
+		return encodeV1(cfg)
+	}
 	var document yaml.Node
 	if err := document.Encode(cfg); err != nil {
 		return nil, fmt.Errorf("encode config: %w", err)
@@ -206,6 +209,89 @@ func Encode(cfg Config) ([]byte, error) {
 		return nil, fmt.Errorf("encode config: %w", err)
 	}
 	return data, nil
+}
+
+func encodeV1(cfg Config) ([]byte, error) {
+	legacy := configV1{Version: "1", App: cfg.App, Localizations: make(map[string]localeFilesV1, len(cfg.Localizations))}
+	for locale, localization := range cfg.Localizations {
+		paths := localization.Paths()
+		legacy.Localizations[locale] = localeFilesV1{
+			Name:              paths["name"],
+			Subtitle:          paths["subtitle"],
+			Description:       paths["description"],
+			Keywords:          paths["keywords"],
+			PromotionalText:   paths["promotional_text"],
+			WhatsNew:          paths["whats_new"],
+			SupportURL:        paths["support_url"],
+			MarketingURL:      paths["marketing_url"],
+			PrivacyPolicyURL:  paths["privacy_policy_url"],
+			PrivacyChoicesURL: paths["privacy_choices_url"],
+			PrivacyPolicyText: paths["privacy_policy_text"],
+		}
+	}
+	data, err := yaml.Marshal(legacy)
+	if err != nil {
+		return nil, fmt.Errorf("encode config: %w", err)
+	}
+	return data, nil
+}
+
+// EncodeUpdatedValues updates only managed version 2 scalar nodes in an
+// existing configuration. Parsing and re-encoding the YAML node tree keeps
+// user comments and key order intact. A missing file is treated as a newly
+// initialized project and receives the standard generated configuration.
+func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
+	if cfg.Version != CurrentVersion {
+		return Encode(cfg)
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Encode(cfg)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read config for update: %w", err)
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return nil, fmt.Errorf("parse config for update: %w", err)
+	}
+	root := &document
+	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+		root = root.Content[0]
+	}
+	localizations := mappingValue(root, "localizations")
+	if localizations == nil {
+		return nil, errors.New("update config: localizations mapping is missing")
+	}
+	for _, locale := range SortedLocales(cfg.Localizations) {
+		localeNode := mappingValue(localizations, locale)
+		if localeNode == nil {
+			return nil, fmt.Errorf("update config: localization %q is missing", locale)
+		}
+		valuesNode := mappingValue(localeNode, "values")
+		for field, pointer := range cfg.Localizations[locale].Values.Pointers() {
+			if pointer == nil {
+				continue
+			}
+			if valuesNode == nil {
+				return nil, fmt.Errorf("update config: %s.values mapping is missing", locale)
+			}
+			valueNode := mappingValue(valuesNode, field)
+			if valueNode == nil {
+				return nil, fmt.Errorf("update config: managed field %s.values.%s is missing", locale, field)
+			}
+			if valueNode.Kind != yaml.ScalarNode {
+				return nil, fmt.Errorf("update config: managed field %s.values.%s is not a scalar", locale, field)
+			}
+			valueNode.Value = *pointer
+			valueNode.Tag = "!!str"
+		}
+	}
+	updated, err := yaml.Marshal(&document)
+	if err != nil {
+		return nil, fmt.Errorf("encode updated config: %w", err)
+	}
+	return updated, nil
 }
 
 func addSchemaComments(document *yaml.Node) {

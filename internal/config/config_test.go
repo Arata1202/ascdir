@@ -72,6 +72,67 @@ localizations:
 	if len(cfg.Localizations["en-US"].Values.Map()) != 0 {
 		t.Fatalf("legacy values unexpectedly became inline: %#v", cfg.Localizations["en-US"].Values.Map())
 	}
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(saved), "values:") || !strings.Contains(string(saved), "name: metadata/en-US/name.txt") {
+		t.Fatalf("version 1 was not saved in its original schema:\n%s", saved)
+	}
+	roundTripped, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := roundTripped.Localizations["en-US"].Paths()["name"]; got != "metadata/en-US/name.txt" {
+		t.Fatalf("round-tripped name path = %q", got)
+	}
+}
+
+func TestEncodeUpdatedValuesPreservesCommentsAndKeyOrder(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	contents := `# project comment
+version: "2"
+app:
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.0.0
+localizations:
+  en-US: # locale comment
+    values:
+      name: Before # custom name comment
+    files:
+      description: metadata/en-US/description.md
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localization := cfg.Localizations["en-US"]
+	localization.Values.SetManaged("name", "After")
+	cfg.Localizations["en-US"] = localization
+	updated, err := EncodeUpdatedValues(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(updated)
+	for _, expected := range []string{"# project comment", "# locale comment", "name: After # custom name comment"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("updated config is missing %q:\n%s", expected, text)
+		}
+	}
+	if strings.Contains(text, "subtitle:") {
+		t.Fatalf("update added an unmanaged field:\n%s", text)
+	}
+	if strings.Index(text, "values:") > strings.Index(text, "files:") {
+		t.Fatalf("update changed key order:\n%s", text)
+	}
 }
 
 func TestLoadRejectsUnknownFields(t *testing.T) {

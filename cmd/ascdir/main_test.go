@@ -266,6 +266,45 @@ func TestRunInitPullAndPush(t *testing.T) {
 	}
 }
 
+func TestRunInitForceReplacesVersionOneConfiguration(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	configPath := filepath.Join(directory, "ascdir.yaml")
+	legacy := `version: "1"
+app:
+  bundle_id: com.example.app
+  platform: IOS
+  version: 0.9.0
+localizations:
+  en-US:
+    description: metadata/en-US/description.md
+`
+	if err := os.WriteFile(configPath, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	remote := appstore.Metadata{AppID: "app-1", Localizations: map[string]appstore.Localization{
+		"en-US": {Values: map[string]string{"name": "Example", "description": "Description"}},
+	}}
+	client := mockStoreClient{
+		fetchMetadata: func(context.Context, string, string, string, string) (appstore.Metadata, error) {
+			return remote, nil
+		},
+	}
+	environment, _, _ := testEnvironment(client)
+	if err := runWithEnvironment(context.Background(), []string{
+		"init", "--force", "--bundle-id", "com.example.app", "--version", "1.0.0", "--config", configPath,
+	}, environment); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != config.CurrentVersion || cfg.Localizations["en-US"].Values.Name == nil || *cfg.Localizations["en-US"].Values.Name != "Example" {
+		t.Fatalf("forced configuration = %#v", cfg)
+	}
+}
+
 func TestRunPushRequiresExplicitPermissionToClear(t *testing.T) {
 	t.Parallel()
 	directory := t.TempDir()

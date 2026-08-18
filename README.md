@@ -147,7 +147,7 @@ Remove a key to leave that field unmanaged. An explicitly empty value remains ma
 
 Version 1 configurations remain fully supported. Existing projects can continue using one file per field without modification; newly initialized projects use version 2. To migrate manually, move short values into `values`, keep long-form paths under `files`, and change `version` to `"2"`.
 
-Unknown configuration keys are rejected so misspelled fields cannot be silently ignored. During `pull`, the configuration and metadata files are staged before any destination is replaced, and each replacement is atomic.
+Unknown configuration keys are rejected so misspelled fields cannot be silently ignored. During `pull`, ascdir updates only the managed YAML value nodes, preserving user comments and key order. The configuration and metadata files are staged before any destination is replaced, and each replacement is atomic.
 
 Supported platforms are `IOS`, `MAC_OS`, `TV_OS`, and `VISION_OS`.
 
