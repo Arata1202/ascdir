@@ -21,6 +21,9 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 	for field, value := range cfg.Categories.Map() {
 		result.Values[field] = value
 	}
+	for field, value := range cfg.AgeRating.Map() {
+		result.Values[field] = value
+	}
 	base := filepath.Dir(filepath.Clean(configPath))
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
@@ -101,6 +104,11 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		for field, pointer := range cfg.Categories.Pointers() {
 			if pointer != nil {
 				updated.Categories.SetManaged(field, remote.Values[field])
+			}
+		}
+		for field, pointer := range cfg.AgeRating.Pointers() {
+			if pointer != nil {
+				updated.AgeRating.SetManaged(field, remote.Values[field])
 			}
 		}
 		updated.Localizations = make(map[string]config.Localization, len(cfg.Localizations))
@@ -259,11 +267,14 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 }
 
 func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
-	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
+	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field := range cfg.Metadata.Map() {
 		selected.Values[field] = source.Values[field]
 	}
 	for field := range cfg.Categories.Map() {
+		selected.Values[field] = source.Values[field]
+	}
+	for field := range cfg.AgeRating.Map() {
 		selected.Values[field] = source.Values[field]
 	}
 	for locale, localization := range cfg.Localizations {
@@ -297,6 +308,8 @@ func PrintChanges(w io.Writer, changes []appstore.Change) {
 			prefix := "metadata"
 			if isCategoryField(change.Field) {
 				prefix = "categories"
+			} else if isAgeRatingField(change.Field) {
+				prefix = "age_rating"
 			}
 			fmt.Fprintf(w, "%s.%s\n", prefix, change.Field)
 		} else {
@@ -341,6 +354,23 @@ func Validate(values appstore.Metadata) []string {
 	}
 	if value, configured := values.Values["content_rights_declaration"]; configured && value != "" && value != "DOES_NOT_USE_THIRD_PARTY_CONTENT" && value != "USES_THIRD_PARTY_CONTENT" {
 		problems = append(problems, "metadata.content_rights_declaration must be DOES_NOT_USE_THIRD_PARTY_CONTENT or USES_THIRD_PARTY_CONTENT")
+	}
+	frequencyValues := map[string]bool{"NONE": true, "INFREQUENT_OR_MILD": true, "FREQUENT_OR_INTENSE": true, "INFREQUENT": true, "FREQUENT": true}
+	for _, field := range ageRatingFrequencyFields() {
+		if value, configured := values.Values[field]; configured && value != "" && !frequencyValues[value] {
+			problems = append(problems, fmt.Sprintf("age_rating.%s has unsupported value %q", field, value))
+		}
+	}
+	validateAgeRatingEnum := func(field string, allowed map[string]bool) {
+		if value, configured := values.Values[field]; configured && value != "" && !allowed[value] {
+			problems = append(problems, fmt.Sprintf("age_rating.%s has unsupported value %q", field, value))
+		}
+	}
+	validateAgeRatingEnum("kids_age_band", map[string]bool{"FIVE_AND_UNDER": true, "SIX_TO_EIGHT": true, "NINE_TO_ELEVEN": true})
+	validateAgeRatingEnum("age_rating_override", map[string]bool{"NONE": true, "NINE_PLUS": true, "THIRTEEN_PLUS": true, "SIXTEEN_PLUS": true, "EIGHTEEN_PLUS": true, "UNRATED": true})
+	validateAgeRatingEnum("korea_age_rating_override", map[string]bool{"NONE": true, "FIFTEEN_PLUS": true, "NINETEEN_PLUS": true})
+	if value, configured := values.Values["developer_age_rating_info_url"]; configured && value != "" && !validHTTPURL(value) {
+		problems = append(problems, "age_rating.developer_age_rating_info_url is not a valid HTTP(S) URL")
 	}
 	if _, managed := values.Values["primary_category"]; managed && strings.TrimSpace(values.Values["primary_category"]) == "" {
 		problems = append(problems, "categories.primary_category is empty")
@@ -412,6 +442,24 @@ func validHTTPURL(value string) bool {
 func isCategoryField(field string) bool {
 	switch field {
 	case "primary_category", "primary_subcategory_one", "primary_subcategory_two", "secondary_category", "secondary_subcategory_one", "secondary_subcategory_two":
+		return true
+	default:
+		return false
+	}
+}
+
+func ageRatingFrequencyFields() []string {
+	return []string{"alcohol_tobacco_or_drug_use_or_references", "contests", "gambling_simulated", "guns_or_other_weapons", "medical_or_treatment_information", "profanity_or_crude_humor", "sexual_content_graphic_and_nudity", "sexual_content_or_nudity", "horror_or_fear_themes", "mature_or_suggestive_themes", "violence_cartoon_or_fantasy", "violence_realistic_prolonged_graphic_or_sadistic", "violence_realistic"}
+}
+
+func isAgeRatingField(field string) bool {
+	for _, candidate := range ageRatingFrequencyFields() {
+		if field == candidate {
+			return true
+		}
+	}
+	switch field {
+	case "advertising", "gambling", "health_or_wellness_topics", "kids_age_band", "loot_box", "messaging_and_chat", "parental_controls", "age_assurance", "social_media", "social_media_age_restricted", "unrestricted_web_access", "user_generated_content", "age_rating_override", "korea_age_rating_override", "developer_age_rating_info_url":
 		return true
 	default:
 		return false
