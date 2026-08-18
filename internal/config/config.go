@@ -368,6 +368,11 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if cfg.LicenseAgreement != nil {
+		if err := replaceMappingValue(root, "license_agreement", cfg.LicenseAgreement); err != nil {
+			return nil, err
+		}
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
@@ -382,6 +387,26 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 		return nil, fmt.Errorf("encode updated config: %w", err)
 	}
 	return updated, nil
+}
+
+func replaceMappingValue(mapping *yaml.Node, key string, value any) error {
+	var encoded yaml.Node
+	if err := encoded.Encode(value); err != nil {
+		return fmt.Errorf("encode config value %s: %w", key, err)
+	}
+	node := &encoded
+	if encoded.Kind == yaml.DocumentNode && len(encoded.Content) > 0 {
+		node = encoded.Content[0]
+	}
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		if mapping.Content[index].Value == key {
+			node.HeadComment = mapping.Content[index+1].HeadComment
+			mapping.Content[index+1] = node
+			return nil
+		}
+	}
+	mapping.Content = append(mapping.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, node)
+	return nil
 }
 
 func updateScalarMapping(mapping *yaml.Node, label string, values map[string]*string) error {
