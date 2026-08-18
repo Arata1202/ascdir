@@ -50,6 +50,24 @@ func TestEncodeUpdatedValuesUpdatesLicenseTerritories(t *testing.T) {
 	}
 }
 
+func TestEncodeUpdatedValuesUpdatesPreviewFrameTimes(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.AppPreviews = "assets/app-previews"
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Assets.PreviewFrameTimes = map[string]string{"en-US/IPHONE_67/01.mp4": "00:00:05"}
+	data, err := EncodeUpdatedValues(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `en-US/IPHONE_67/01.mp4: "00:00:05"`) {
+		t.Fatalf("updated config =\n%s", data)
+	}
+}
+
 func TestLoadVersionOneConfiguration(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ascdir.yaml")

@@ -43,6 +43,8 @@ type Metadata struct {
 	Accessibility      map[string]AccessibilityDeclaration
 	Screenshots        map[string]map[string][]Asset
 	ScreenshotSetIDs   map[string]map[string]string
+	AppPreviews        map[string]map[string][]Asset
+	AppPreviewSetIDs   map[string]map[string]string
 	Values             map[string]string
 	Localizations      map[string]Localization
 }
@@ -56,15 +58,18 @@ type FetchOptions struct {
 	LicenseAgreement bool
 	Screenshots      bool
 	DownloadAssets   bool
+	AppPreviews      bool
 }
 
 type Asset struct {
-	ID       string
-	FileName string
-	Path     string
-	Checksum string
-	Size     int64
-	Content  []byte
+	ID                   string
+	FileName             string
+	Path                 string
+	Checksum             string
+	Size                 int64
+	Content              []byte
+	MIMEType             string
+	PreviewFrameTimeCode string
 }
 
 type AssetSetChange struct {
@@ -161,7 +166,7 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	if err != nil {
 		return Metadata{}, err
 	}
-	result := Metadata{AppID: app.ID, Values: map[string]string{}, Accessibility: map[string]AccessibilityDeclaration{}, Screenshots: map[string]map[string][]Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, Localizations: map[string]Localization{}}
+	result := Metadata{AppID: app.ID, Values: map[string]string{}, Accessibility: map[string]AccessibilityDeclaration{}, Screenshots: map[string]map[string][]Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Localizations: map[string]Localization{}}
 	copyAttributes(result.Values, app.Attributes, appFields)
 	if options.LicenseAgreement {
 		if err := c.fetchLicenseAgreement(ctx, &result); err != nil {
@@ -267,6 +272,11 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 	}
 	if options.Screenshots {
 		if err := c.fetchScreenshots(ctx, &result, options.DownloadAssets); err != nil {
+			return Metadata{}, err
+		}
+	}
+	if options.AppPreviews {
+		if err := c.fetchAppPreviews(ctx, &result, options.DownloadAssets); err != nil {
 			return Metadata{}, err
 		}
 	}
@@ -400,6 +410,9 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 		return err
 	}
 	if err := c.applyScreenshotChanges(ctx, changes); err != nil {
+		return err
+	}
+	if err := c.applyAppPreviewChanges(ctx, changes); err != nil {
 		return err
 	}
 	globalGroups := make([]string, 0, len(global))

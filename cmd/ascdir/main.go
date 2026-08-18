@@ -459,7 +459,7 @@ func requireNoArgs(fs *flag.FlagSet) error {
 }
 
 func fetchOptions(cfg config.Config) appstore.FetchOptions {
-	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != ""}
+	return appstore.FetchOptions{AgeRating: len(cfg.AgeRating.Map()) > 0, Accessibility: len(cfg.Accessibility) > 0, LicenseAgreement: cfg.LicenseAgreement != nil, Screenshots: cfg.Assets.Screenshots != "", AppPreviews: cfg.Assets.AppPreviews != ""}
 }
 
 func newClient(stderr io.Writer) (*appstore.Client, error) {

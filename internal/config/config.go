@@ -46,7 +46,9 @@ func (v LicenseAgreementValues) Map() map[string]string {
 }
 
 type AssetPaths struct {
-	Screenshots string `yaml:"screenshots,omitempty"`
+	Screenshots       string            `yaml:"screenshots,omitempty"`
+	AppPreviews       string            `yaml:"app_previews,omitempty"`
+	PreviewFrameTimes map[string]string `yaml:"preview_frame_times,omitempty"`
 }
 
 // AgeRatingValues mirrors Apple's age rating declaration. Pointer values make
@@ -378,6 +380,15 @@ func EncodeUpdatedValues(path string, cfg Config) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if cfg.Assets.AppPreviews != "" {
+		assets := mappingValue(root, "assets")
+		if assets == nil {
+			return nil, errors.New("update config: assets mapping is missing")
+		}
+		if err := replaceMappingValue(assets, "preview_frame_times", cfg.Assets.PreviewFrameTimes); err != nil {
+			return nil, err
+		}
+	}
 	for _, locale := range SortedLocales(cfg.Localizations) {
 		localeNode := mappingValue(localizations, locale)
 		if localeNode == nil {
@@ -406,6 +417,7 @@ func replaceMappingValue(mapping *yaml.Node, key string, value any) error {
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
 		if mapping.Content[index].Value == key {
 			node.HeadComment = mapping.Content[index+1].HeadComment
+			node.LineComment = mapping.Content[index+1].LineComment
 			mapping.Content[index+1] = node
 			return nil
 		}
@@ -561,6 +573,20 @@ func (c Config) Validate() error {
 		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 			return errors.New("assets.screenshots must be a relative directory inside the project")
 		}
+	}
+	if c.Assets.AppPreviews != "" {
+		clean := filepath.Clean(c.Assets.AppPreviews)
+		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return errors.New("assets.app_previews must be a relative directory inside the project")
+		}
+		for path := range c.Assets.PreviewFrameTimes {
+			clean := filepath.Clean(path)
+			if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("assets.preview_frame_times key %q must be relative to assets.app_previews", path)
+			}
+		}
+	} else if len(c.Assets.PreviewFrameTimes) > 0 {
+		return errors.New("assets.preview_frame_times requires assets.app_previews")
 	}
 	for _, locale := range SortedLocales(c.Localizations) {
 		localization := c.Localizations[locale]

@@ -150,6 +150,9 @@ license_agreement:
   territories: [JPN, USA] # App Store territory IDs where the custom EULA applies
 assets:
   screenshots: assets/screenshots # <locale>/<display-type>/<ordered image files>
+  app_previews: assets/app-previews # <locale>/<preview-type>/<ordered video files>
+  preview_frame_times:
+    en-US/IPHONE_67/01-demo.mp4: "00:00:05"
 localizations:
   en-US:
     values:
@@ -190,6 +193,7 @@ Non-localized fields:
 - Accessibility Nutrition Labels for each device family
 - Custom end-user license agreement text and territories
 - App screenshots, including locale, display type, and order
+- App Preview videos, display order, and optional poster-frame timecodes
 
 App-level localization fields:
 

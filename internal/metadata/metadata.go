@@ -17,7 +17,7 @@ import (
 )
 
 func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) {
-	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, Localizations: map[string]appstore.Localization{}}
+	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]appstore.Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field, value := range cfg.Categories.Map() {
 		result.Values[field] = value
 	}
@@ -47,6 +47,11 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 		return appstore.Metadata{}, err
 	}
 	result.Screenshots = screenshots
+	previews, err := readLocalAppPreviews(cfg, base)
+	if err != nil {
+		return appstore.Metadata{}, err
+	}
+	result.AppPreviews = previews
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
 		values := localization.Values.Map()
@@ -105,6 +110,7 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		operations = append(operations, writeOperation{field: "license_agreement", path: fullPath, data: []byte(value)})
 	}
 	var staleScreenshots []string
+	var staleAppPreviews []string
 	if cfg.Assets.Screenshots != "" {
 		root, err := prepareManagedPath(base, filepath.ToSlash(filepath.Join(cfg.Assets.Screenshots, ".keep")))
 		if err != nil {
@@ -144,6 +150,45 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 			return fmt.Errorf("scan assets.screenshots: %w", err)
 		}
 	}
+	if cfg.Assets.AppPreviews != "" {
+		root, err := prepareManagedPath(base, filepath.ToSlash(filepath.Join(cfg.Assets.AppPreviews, ".keep")))
+		if err != nil {
+			return fmt.Errorf("resolve assets.app_previews: %w", err)
+		}
+		root = filepath.Dir(root)
+		wanted := map[string]bool{}
+		for locale, sets := range remote.AppPreviews {
+			for previewType, assets := range sets {
+				for _, asset := range assets {
+					if len(asset.Content) == 0 {
+						return fmt.Errorf("app preview %s/%s/%s was not downloaded", locale, previewType, asset.FileName)
+					}
+					relative := filepath.ToSlash(filepath.Join(cfg.Assets.AppPreviews, locale, previewType, asset.FileName))
+					fullPath, err := prepareManagedPath(base, relative)
+					if err != nil {
+						return fmt.Errorf("resolve app preview %s: %w", relative, err)
+					}
+					wanted[fullPath] = true
+					operations = append(operations, writeOperation{field: "app_preview", path: fullPath, data: asset.Content})
+				}
+			}
+		}
+		if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || wanted[path] {
+				return nil
+			}
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext == ".mov" || ext == ".mp4" || ext == ".m4v" {
+				staleAppPreviews = append(staleAppPreviews, path)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("scan assets.app_previews: %w", err)
+		}
+	}
 	for _, locale := range config.SortedLocales(cfg.Localizations) {
 		localization := cfg.Localizations[locale]
 		remoteLocale := remote.Localizations[locale]
@@ -170,6 +215,19 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 	}
 	if cfg.Version == config.CurrentVersion {
 		updated := cfg
+		if cfg.Assets.AppPreviews != "" {
+			updated.Assets.PreviewFrameTimes = map[string]string{}
+			for locale, sets := range remote.AppPreviews {
+				for previewType, assets := range sets {
+					for _, asset := range assets {
+						if asset.PreviewFrameTimeCode != "" {
+							key := filepath.ToSlash(filepath.Join(locale, previewType, asset.FileName))
+							updated.Assets.PreviewFrameTimes[key] = asset.PreviewFrameTimeCode
+						}
+					}
+				}
+			}
+		}
 		for field, pointer := range cfg.Metadata.Pointers() {
 			if pointer != nil {
 				updated.Metadata.SetManaged(field, remote.Values[field])
@@ -256,6 +314,11 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 	for _, path := range staleScreenshots {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove stale screenshot %s: %w", path, err)
+		}
+	}
+	for _, path := range staleAppPreviews {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove stale app preview %s: %w", path, err)
 		}
 	}
 	return nil
@@ -380,11 +443,12 @@ func Diff(desired, remote appstore.Metadata) []appstore.Change {
 		}
 	}
 	changes = append(changes, screenshotChanges(desired, remote)...)
+	changes = append(changes, appPreviewChanges(desired, remote)...)
 	return changes
 }
 
 func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
-	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
+	selected := appstore.Metadata{AppID: source.AppID, AppInfoID: source.AppInfoID, VersionID: source.VersionID, AgeRatingID: source.AgeRatingID, Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]appstore.Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Values: map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field := range cfg.Metadata.Map() {
 		selected.Values[field] = source.Values[field]
 	}
@@ -409,6 +473,10 @@ func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 	if cfg.Assets.Screenshots != "" {
 		selected.Screenshots = source.Screenshots
 		selected.ScreenshotSetIDs = source.ScreenshotSetIDs
+	}
+	if cfg.Assets.AppPreviews != "" {
+		selected.AppPreviews = source.AppPreviews
+		selected.AppPreviewSetIDs = source.AppPreviewSetIDs
 	}
 	for locale, localization := range cfg.Localizations {
 		values := map[string]string{}
@@ -495,6 +563,13 @@ func Validate(values appstore.Metadata) []string {
 		for displayType, assets := range sets {
 			if len(assets) > 10 {
 				problems = append(problems, fmt.Sprintf("assets.screenshots.%s.%s has %d screenshots; maximum is 10", locale, displayType, len(assets)))
+			}
+		}
+	}
+	for locale, sets := range values.AppPreviews {
+		for previewType, assets := range sets {
+			if len(assets) > 3 {
+				problems = append(problems, fmt.Sprintf("assets.app_previews.%s.%s has %d previews; maximum is 3", locale, previewType, len(assets)))
 			}
 		}
 	}
