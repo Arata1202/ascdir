@@ -88,7 +88,7 @@ func TestWriteLocalCreatesPrivacyPolicyTextForTVOS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tvOS privacy policy text was not written: %v", err)
 	}
-	if got := string(data); got != "Privacy policy" {
+	if got := string(data); got != "Privacy policy\n" {
 		t.Fatalf("privacy policy text = %q", got)
 	}
 }
