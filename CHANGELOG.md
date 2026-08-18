@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-19
+
 ### Fixed
 
 - Generate `privacy_policy.md` only for newly initialized tvOS projects while preserving existing configurations that manage the field explicitly.
@@ -64,7 +66,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Install verified release archives with the macOS and Linux installer
 - Retry safe requests after rate limits and transient server failures
 
-[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/Arata1202/ascdir/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/Arata1202/ascdir/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Arata1202/ascdir/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Arata1202/ascdir/releases/tag/v1.0.0
