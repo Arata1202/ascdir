@@ -324,6 +324,9 @@ func Validate(values appstore.Metadata) []string {
 	if value, configured := values.Values["accessibility_url"]; configured && value != "" && !validHTTPURL(value) {
 		problems = append(problems, "metadata.accessibility_url is not a valid HTTP(S) URL")
 	}
+	if value, configured := values.Values["content_rights_declaration"]; configured && value != "" && value != "DOES_NOT_USE_THIRD_PARTY_CONTENT" && value != "USES_THIRD_PARTY_CONTENT" {
+		problems = append(problems, "metadata.content_rights_declaration must be DOES_NOT_USE_THIRD_PARTY_CONTENT or USES_THIRD_PARTY_CONTENT")
+	}
 	locales := values.Locales()
 	for _, locale := range locales {
 		fields := values.Localizations[locale].Values

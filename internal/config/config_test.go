@@ -25,7 +25,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"version: \"2\"", "metadata:", "copyright:", "accessibility_url:", "values:", "files:", "# App Store display name", "# Markdown file containing the long app description"} {
+	for _, expected := range []string{"version: \"2\"", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "values:", "files:", "# App Store display name", "# Markdown file containing the long app description"} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated config is missing %q:\n%s", expected, data)
 		}

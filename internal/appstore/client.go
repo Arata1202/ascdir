@@ -203,7 +203,8 @@ var infoFields = map[string]string{
 }
 
 var appFields = map[string]string{
-	"accessibility_url": "accessibilityUrl",
+	"accessibility_url":          "accessibilityUrl",
+	"content_rights_declaration": "contentRightsDeclaration",
 }
 
 var appStoreVersionFields = map[string]string{
@@ -236,7 +237,7 @@ func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []s
 				global[group] = map[string]any{}
 			}
 			value := any(change.After)
-			if change.Field == "accessibility_url" && change.After == "" {
+			if (change.Field == "accessibility_url" || change.Field == "content_rights_declaration") && change.After == "" {
 				value = nil
 			}
 			global[group][fields[change.Field]] = value
@@ -346,7 +347,7 @@ func MissingLocalizationResources(remote Metadata, locales []string) []string {
 func (c *Client) resolveApp(ctx context.Context, appID, bundleID string) (resource, error) {
 	if appID != "" {
 		var response singleResponse
-		if err := c.doJSON(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(appID)+"?fields%5Bapps%5D=bundleId,accessibilityUrl", nil, &response); err != nil {
+		if err := c.doJSON(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(appID)+"?fields%5Bapps%5D=bundleId,accessibilityUrl,contentRightsDeclaration", nil, &response); err != nil {
 			return resource{}, err
 		}
 		if actual := stringAttribute(response.Data, "bundleId"); actual != "" && actual != bundleID {
@@ -354,7 +355,7 @@ func (c *Client) resolveApp(ctx context.Context, appID, bundleID string) (resour
 		}
 		return response.Data, nil
 	}
-	apps, err := c.list(ctx, "/v1/apps?filter%5BbundleId%5D="+url.QueryEscape(bundleID)+"&fields%5Bapps%5D=bundleId,accessibilityUrl&limit=2")
+	apps, err := c.list(ctx, "/v1/apps?filter%5BbundleId%5D="+url.QueryEscape(bundleID)+"&fields%5Bapps%5D=bundleId,accessibilityUrl,contentRightsDeclaration&limit=2")
 	if err != nil {
 		return resource{}, err
 	}

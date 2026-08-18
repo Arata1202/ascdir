@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Manage version copyright and the app accessibility URL as optional YAML values
+- Manage the app content rights declaration as an optional YAML value
 
 ### Changed
 
