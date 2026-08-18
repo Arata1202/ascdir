@@ -1,6 +1,6 @@
 # ascdir
 
-`ascdir` manages App Store Connect text metadata as reviewable YAML and Markdown. It lets teams review localized store content in Git, pull the current values, validate them locally, and push only the fields that changed.
+`ascdir` manages App Store Connect metadata and product-page assets as reviewable YAML, Markdown, and media files. It lets teams review store content in Git, pull the current values and assets, validate them locally, and push only what changed.
 
 ## Features
 
