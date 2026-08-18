@@ -125,11 +125,10 @@ func appPreviewChanges(desired, remote appstore.Metadata) []appstore.Change {
 			if previewAssetsEqual(before, after) {
 				continue
 			}
-			for index := range after {
-				after[index].Path = remote.Localizations[locale].VersionLocalizationID
-			}
 			changes = append(changes, appstore.Change{AssetSet: &appstore.AssetSetChange{
-				Kind: "app_previews", Locale: locale, DisplayType: previewType, SetID: remote.AppPreviewSetIDs[locale][previewType], Before: before, After: after,
+				Kind: "app_previews", Locale: locale, DisplayType: previewType,
+				LocalizationID: remote.Localizations[locale].VersionLocalizationID,
+				SetID:          remote.AppPreviewSetIDs[locale][previewType], Before: before, After: after,
 			}})
 		}
 	}

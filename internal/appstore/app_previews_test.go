@@ -1,6 +1,7 @@
 package appstore
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +56,10 @@ func TestUploadAppPreviewCommitsVideo(t *testing.T) {
 	content := []byte("video content")
 	sum := md5.Sum(content)
 	checksum := hex.EncodeToString(sum[:])
+	path := t.TempDir() + "/01.mp4"
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var calls []string
 	var server *httptest.Server
 	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +88,7 @@ func TestUploadAppPreviewCommitsVideo(t *testing.T) {
 	defer server.Close()
 	client := testClient(t, server.URL)
 	client.httpClient = server.Client()
-	change := AssetSetChange{Kind: "app_previews", Locale: "en-US", DisplayType: "IPHONE_67", SetID: "set-1", After: []Asset{{FileName: "01.mp4", Checksum: checksum, Content: content, MIMEType: "video/mp4", PreviewFrameTimeCode: "00:00:05"}}}
+	change := AssetSetChange{Kind: "app_previews", Locale: "en-US", DisplayType: "IPHONE_67", SetID: "set-1", After: []Asset{{FileName: "01.mp4", Path: path, Size: int64(len(content)), Checksum: checksum, MIMEType: "video/mp4", PreviewFrameTimeCode: "00:00:05"}}}
 	if err := client.applyAppPreviewSet(context.Background(), change); err != nil {
 		t.Fatal(err)
 	}
@@ -122,5 +128,18 @@ func TestAppPreviewPosterFrameUpdateReusesVideo(t *testing.T) {
 	want := []string{"PATCH /v1/appPreviews/preview-1", "PATCH /v1/appPreviewSets/set-1/relationships/appPreviews"}
 	if len(calls) != len(want) || calls[0] != want[0] || calls[1] != want[1] {
 		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+func TestCopyWithLimitRejectsOversizedAsset(t *testing.T) {
+	t.Parallel()
+	var destination bytes.Buffer
+	if _, err := copyWithLimit(&destination, strings.NewReader("12345"), 4); err == nil {
+		t.Fatal("oversized asset was accepted")
+	}
+	destination.Reset()
+	written, err := copyWithLimit(&destination, strings.NewReader("1234"), 4)
+	if err != nil || written != 4 || destination.String() != "1234" {
+		t.Fatalf("copy = %d, %q, %v", written, destination.String(), err)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 )
+
+const maximumScreenshotDownloadSize = 100 << 20
 
 func (c *Client) fetchScreenshots(ctx context.Context, result *Metadata, download bool) error {
 	for locale, localization := range result.Localizations {
@@ -115,11 +118,11 @@ func (c *Client) downloadAsset(ctx context.Context, assetURL string) ([]byte, er
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("asset server returned %s", resp.Status)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 100<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maximumScreenshotDownloadSize+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) == 100<<20 {
+	if len(data) > maximumScreenshotDownloadSize {
 		return nil, fmt.Errorf("asset exceeds 100 MiB")
 	}
 	return data, nil
@@ -137,17 +140,21 @@ func (c *Client) applyScreenshotChanges(ctx context.Context, changes []Change) e
 	return nil
 }
 
-func (c *Client) applyScreenshotSet(ctx context.Context, change AssetSetChange) error {
+func (c *Client) applyScreenshotSet(ctx context.Context, change AssetSetChange) (err error) {
 	setID := change.SetID
+	createdSet := false
 	if setID == "" {
 		if len(change.After) == 0 {
 			return nil
+		}
+		if change.LocalizationID == "" {
+			return fmt.Errorf("version localization ID is missing")
 		}
 		body := map[string]any{"data": map[string]any{
 			"type":       "appScreenshotSets",
 			"attributes": map[string]string{"screenshotDisplayType": change.DisplayType},
 			"relationships": map[string]any{"appStoreVersionLocalization": map[string]any{"data": map[string]string{
-				"type": "appStoreVersionLocalizations", "id": change.After[0].Path,
+				"type": "appStoreVersionLocalizations", "id": change.LocalizationID,
 			}}},
 		}}
 		var response singleResponse
@@ -155,12 +162,33 @@ func (c *Client) applyScreenshotSet(ctx context.Context, change AssetSetChange) 
 			return err
 		}
 		setID = response.Data.ID
+		if setID == "" {
+			return errors.New("create screenshot set: response has no resource ID")
+		}
+		createdSet = true
 	}
 	available := map[string][]Asset{}
 	for _, asset := range change.Before {
 		available[asset.Checksum] = append(available[asset.Checksum], asset)
 	}
 	orderedIDs := make([]string, 0, len(change.After))
+	var uploadedIDs []string
+	orderUpdated := false
+	defer func() {
+		if err == nil || orderUpdated {
+			return
+		}
+		for _, id := range uploadedIDs {
+			if cleanupErr := c.cleanupReservedResource(ctx, "appScreenshots", id); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("clean up uploaded screenshot %s: %w", id, cleanupErr))
+			}
+		}
+		if createdSet {
+			if cleanupErr := c.cleanupReservedResource(ctx, "appScreenshotSets", setID); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("clean up screenshot set %s: %w", setID, cleanupErr))
+			}
+		}
+	}()
 	kept := map[string]bool{}
 	for _, desired := range change.After {
 		matches := available[desired.Checksum]
@@ -176,6 +204,7 @@ func (c *Client) applyScreenshotSet(ctx context.Context, change AssetSetChange) 
 			return err
 		}
 		orderedIDs = append(orderedIDs, id)
+		uploadedIDs = append(uploadedIDs, id)
 	}
 	linkages := make([]map[string]string, 0, len(orderedIDs))
 	for _, id := range orderedIDs {
@@ -185,6 +214,7 @@ func (c *Client) applyScreenshotSet(ctx context.Context, change AssetSetChange) 
 	if err := c.doJSON(ctx, http.MethodPatch, "/v1/appScreenshotSets/"+url.PathEscape(setID)+"/relationships/appScreenshots", body, nil); err != nil {
 		return fmt.Errorf("update display order: %w", err)
 	}
+	orderUpdated = true
 	for _, existing := range change.Before {
 		if !kept[existing.ID] {
 			if err := c.doJSON(ctx, http.MethodDelete, "/v1/appScreenshots/"+url.PathEscape(existing.ID), nil, nil); err != nil {
@@ -195,7 +225,7 @@ func (c *Client) applyScreenshotSet(ctx context.Context, change AssetSetChange) 
 	return nil
 }
 
-func (c *Client) uploadScreenshot(ctx context.Context, setID string, asset Asset) (string, error) {
+func (c *Client) uploadScreenshot(ctx context.Context, setID string, asset Asset) (_ string, err error) {
 	size := asset.Size
 	if size == 0 {
 		size = int64(len(asset.Content))
@@ -209,6 +239,18 @@ func (c *Client) uploadScreenshot(ctx context.Context, setID string, asset Asset
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/appScreenshots", body, &response); err != nil {
 		return "", fmt.Errorf("reserve %s: %w", asset.FileName, err)
 	}
+	if response.Data.ID == "" {
+		return "", fmt.Errorf("reserve %s: response has no resource ID", asset.FileName)
+	}
+	committed := false
+	defer func() {
+		if err == nil || committed || response.Data.ID == "" {
+			return
+		}
+		if cleanupErr := c.cleanupReservedResource(ctx, "appScreenshots", response.Data.ID); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("clean up reserved screenshot %s: %w", response.Data.ID, cleanupErr))
+		}
+	}()
 	operations, err := validatedUploadOperations(response.Data.Attributes["uploadOperations"], size)
 	if err != nil {
 		return "", fmt.Errorf("reserve %s: %w", asset.FileName, err)
@@ -230,6 +272,7 @@ func (c *Client) uploadScreenshot(ctx context.Context, setID string, asset Asset
 	if err := c.patchResource(ctx, "appScreenshots", response.Data.ID, attributes); err != nil {
 		return "", fmt.Errorf("commit %s: %w", asset.FileName, err)
 	}
+	committed = true
 	return response.Data.ID, nil
 }
 

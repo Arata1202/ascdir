@@ -106,3 +106,38 @@ func TestValidatedUploadOperationsRequiresExactCoverage(t *testing.T) {
 		}
 	}
 }
+
+func TestUploadScreenshotCleansReservationAfterUploadFailure(t *testing.T) {
+	t.Parallel()
+	content := []byte("asset content")
+	sum := md5.Sum(content)
+	checksum := hex.EncodeToString(sum[:])
+	deleted := false
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/appScreenshots":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("shot-reserved", "appScreenshots", map[string]any{
+				"uploadOperations": []any{map[string]any{"method": "PUT", "url": server.URL + "/upload", "offset": 0, "length": len(content), "requestHeaders": []any{}}},
+			})})
+		case r.Method == http.MethodPut && r.URL.Path == "/upload":
+			http.Error(w, "upload failed", http.StatusInternalServerError)
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/appScreenshots/shot-reserved":
+			deleted = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	client.httpClient = server.Client()
+	_, err := client.uploadScreenshot(context.Background(), "set-1", Asset{FileName: "01.png", Checksum: checksum, Content: content})
+	if err == nil {
+		t.Fatal("upload unexpectedly succeeded")
+	}
+	if !deleted {
+		t.Fatal("reserved screenshot was not deleted")
+	}
+}

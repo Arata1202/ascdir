@@ -250,11 +250,11 @@ Finds an existing app and version, generates the configuration, and pulls its lo
 
 ### `ascdir pull`
 
-Downloads configured fields into `ascdir.yaml` and the referenced Markdown files. Local edits are overwritten, so commit or review them first. Use `pull --dry-run` to preview the local differences without writing files.
+Downloads configured fields into `ascdir.yaml`, referenced Markdown files, and managed asset directories. Local edits are overwritten, so commit or review them first. Use `pull --dry-run` to preview the local differences without writing files.
 
 ### `ascdir push`
 
-Validates and compares local YAML and Markdown with App Store Connect, then updates only changed resources. Use `--dry-run` to inspect changes without writing.
+Validates and compares local metadata and assets with App Store Connect, then updates only changed resources. Use `--dry-run` to inspect changes without writing.
 
 Clearing a non-empty remote field requires the explicit `--allow-empty` flag:
 
@@ -276,6 +276,8 @@ Publishing an Accessibility Nutrition Label also requires `--allow-irreversible`
 
 Apple only permits most version metadata to change while the version is in an editable state. API errors are returned without hiding Apple's error code or detail.
 
+App Store Connect does not provide transactions across resource types. ascdir validates and stages the complete plan before writing, creates required localization resources before their assets, and applies availability and pricing changes last. If Apple rejects a later request, earlier successful requests remain applied. Review the error, rerun `ascdir push --dry-run` to inspect the remaining difference, and then retry.
+
 ### `ascdir check`
 
 Checks the configuration, required files, common character limits, and HTTP(S) URLs without contacting App Store Connect.
@@ -290,7 +292,7 @@ source <(ascdir completion zsh)
 
 ## Scope
 
-`ascdir` manages localized text metadata. It does not upload builds or screenshots, submit versions for review, manage TestFlight, certificates, subscriptions, analytics, or customer reviews.
+`ascdir` manages App Store Connect metadata and product-page assets. It does not upload app builds, submit versions for review, or manage TestFlight, certificates, subscriptions, analytics, or customer reviews.
 
 ## Security
 
