@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-08-19
+
 ### Added
 
 - Publish signed GitHub build provenance for release archives and document how to verify it.
@@ -104,7 +106,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Install verified release archives with the macOS and Linux installer
 - Retry safe requests after rate limits and transient server failures
 
-[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/Arata1202/ascdir/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/Arata1202/ascdir/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/Arata1202/ascdir/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/Arata1202/ascdir/compare/v1.1.0...v1.1.1
