@@ -48,7 +48,7 @@ rm install.sh
 Set `ASCDIR_VERSION` to pin the installer in automation:
 
 ```sh
-ASCDIR_VERSION=v1.1.1 sh install.sh
+ASCDIR_VERSION=v1.1.3 sh install.sh
 ```
 
 For example, in GitHub Actions:
@@ -56,7 +56,7 @@ For example, in GitHub Actions:
 ```yaml
 - name: Install ascdir
   env:
-    ASCDIR_VERSION: v1.1.1
+    ASCDIR_VERSION: v1.1.3
   run: |
     curl -fsSLO "https://github.com/Arata1202/ascdir/releases/download/${ASCDIR_VERSION}/install.sh"
     sh install.sh
