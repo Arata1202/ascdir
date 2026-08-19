@@ -73,7 +73,10 @@ jobs:
         run: ./${{ matrix.binary }} completion bash | bash -n
       - name: Validate Zsh completion
         if: matrix.completion == 'zsh'
-        run: ./${{ matrix.binary }} completion zsh > completion.zsh && zsh -n completion.zsh
+        run: |
+          ./${{ matrix.binary }} completion zsh > completion.zsh
+          zsh -n completion.zsh
+          zsh -f -c 'autoload -Uz compinit && compinit; source ./completion.zsh; (( $+functions[_ascdir] )); [[ "${_comps[ascdir]}" == "_ascdir" ]]'
       - name: Validate PowerShell completion
         if: matrix.completion == 'powershell'
         shell: pwsh
