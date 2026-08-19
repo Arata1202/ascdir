@@ -359,6 +359,22 @@ func TestValidateKeywordsUsesAppStoreByteLimit(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsShortNameAndControlCharacters(t *testing.T) {
+	t.Parallel()
+	values := appstore.Metadata{
+		Values: map[string]string{"copyright": "2026\x00Example"},
+		Localizations: map[string]appstore.Localization{"en-US": {Values: map[string]string{
+			"name": "A", "description": "Description", "support_url": "https://example.com",
+		}}},
+	}
+	problems := strings.Join(Validate(values), "\n")
+	for _, want := range []string{"minimum is 2", "disallowed control character"} {
+		if !strings.Contains(problems, want) {
+			t.Fatalf("problems = %q, missing %q", problems, want)
+		}
+	}
+}
+
 func TestValidateGlobalMetadata(t *testing.T) {
 	t.Parallel()
 	values := appstore.Metadata{Values: map[string]string{

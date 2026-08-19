@@ -30,6 +30,7 @@ var (
 
 type storeClient interface {
 	CheckAuth(context.Context) error
+	ResolveAppID(context.Context, string, string) (string, error)
 	FetchMetadata(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
 	ApplyMetadata(context.Context, appstore.Metadata, []string, []appstore.Change) error
 	ListPricePoints(context.Context, string, string) ([]appstore.PricePoint, error)
@@ -166,7 +167,11 @@ func runPricePoints(ctx context.Context, args []string, environment commandEnvir
 	if err != nil {
 		return err
 	}
-	points, err := client.ListPricePoints(ctx, cfg.App.ID, *territory)
+	appID, err := client.ResolveAppID(ctx, cfg.App.ID, cfg.App.BundleID)
+	if err != nil {
+		return err
+	}
+	points, err := client.ListPricePoints(ctx, appID, *territory)
 	if err != nil {
 		return err
 	}
@@ -504,9 +509,8 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 		fmt.Fprintln(environment.stdout, "No changes.")
 		return nil
 	}
-	if *dryRun {
-		fmt.Fprintf(environment.stdout, "Dry run: %d operation(s) not applied.\n", operationCount)
-		return nil
+	if err := appstore.ValidatePlan(remote, desired.Locales(), changes); err != nil {
+		return fmt.Errorf("plan is not executable: %w", err)
 	}
 	for _, change := range changes {
 		if change.Field == "pricing.schedule" && !*allowCommercialChanges {
@@ -533,7 +537,7 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 	}
 	if !*allowIrreversible {
 		for _, change := range changes {
-			if change.Locale == "" && (change.Field == "kids_age_band" || strings.HasSuffix(change.Field, ".pre_order_enabled") && change.After == "true" || change.DeviceFamily != "" && change.Field == "published" && change.After == "true") {
+			if change.Locale == "" && (isSensitiveAgeRatingChange(change) || strings.HasSuffix(change.Field, ".pre_order_enabled") && change.After == "true" || change.DeviceFamily != "" && change.Field == "published" && change.After == "true") {
 				return errors.New("the change may be irreversible after App Review or publication; review with --dry-run and rerun with --allow-irreversible")
 			}
 		}
@@ -543,11 +547,24 @@ func runPush(ctx context.Context, args []string, environment commandEnvironment)
 			return fmt.Errorf("accessibility.%s.published cannot be unpublished through App Store Connect", change.DeviceFamily)
 		}
 	}
+	if *dryRun {
+		fmt.Fprintf(environment.stdout, "Dry run: %d operation(s) validated and not applied.\n", operationCount)
+		return nil
+	}
 	if err := client.ApplyMetadata(ctx, remote, desired.Locales(), changes); err != nil {
 		return err
 	}
 	fmt.Fprintf(environment.stdout, "Applied %d operation(s).\n", operationCount)
 	return nil
+}
+
+func isSensitiveAgeRatingChange(change appstore.Change) bool {
+	switch change.Field {
+	case "kids_age_band", "age_rating_override", "korea_age_rating_override":
+		return change.Before != change.After
+	default:
+		return false
+	}
 }
 
 func runCheck(args []string) error {

@@ -14,6 +14,9 @@ func (c *Client) fetchAvailability(ctx context.Context, result *Metadata) error 
 	var response singleResponse
 	path := "/v1/apps/" + url.PathEscape(result.AppID) + "/appAvailabilityV2"
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
+		if isAPIStatus(err, http.StatusNotFound) {
+			return nil
+		}
 		return fmt.Errorf("read app availability: %w", err)
 	}
 	result.AvailabilityID = response.Data.ID

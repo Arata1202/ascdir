@@ -96,6 +96,7 @@ type Localization struct {
 
 type AccessibilityDeclaration struct {
 	ID     string
+	State  string
 	Values map[string]string
 }
 
@@ -135,6 +136,18 @@ type errorResponse struct {
 	} `json:"errors"`
 }
 
+type apiStatusError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *apiStatusError) Error() string { return e.Message }
+
+func isAPIStatus(err error, status int) bool {
+	var statusErr *apiStatusError
+	return errors.As(err, &statusErr) && statusErr.StatusCode == status
+}
+
 func NewClient(credentials Credentials, baseURL string, options ...Option) *Client {
 	if baseURL == "" {
 		baseURL = defaultBaseURL
@@ -158,6 +171,17 @@ func NewClient(credentials Credentials, baseURL string, options ...Option) *Clie
 func (c *Client) CheckAuth(ctx context.Context) error {
 	var response listResponse
 	return c.doJSON(ctx, http.MethodGet, "/v1/apps?limit=1", nil, &response)
+}
+
+// ResolveAppID resolves and validates the app identity without fetching a
+// version. Commands such as price-points can therefore support bundle-ID-only
+// configurations consistently with pull and push.
+func (c *Client) ResolveAppID(ctx context.Context, appID, bundleID string) (string, error) {
+	app, err := c.resolveApp(ctx, appID, bundleID)
+	if err != nil {
+		return "", err
+	}
+	return app.ID, nil
 }
 
 func (m Metadata) Locales() []string {
@@ -209,7 +233,15 @@ func (c *Client) FetchMetadata(ctx context.Context, appID, bundleID, platform, v
 			}
 			state := stringAttribute(declaration, "state")
 			values["published"] = strconv.FormatBool(state == "PUBLISHED" || state == "REPLACED")
-			result.Accessibility[deviceFamily] = AccessibilityDeclaration{ID: declaration.ID, Values: values}
+			candidate := AccessibilityDeclaration{ID: declaration.ID, State: state, Values: values}
+			current, exists := result.Accessibility[deviceFamily]
+			candidatePriority, currentPriority := accessibilityStatePriority(candidate.State), accessibilityStatePriority(current.State)
+			if exists && candidatePriority == currentPriority {
+				return Metadata{}, fmt.Errorf("multiple %s accessibility declarations in state %s", deviceFamily, state)
+			}
+			if !exists || candidatePriority > currentPriority {
+				result.Accessibility[deviceFamily] = candidate
+			}
 		}
 	}
 
@@ -313,7 +345,7 @@ func selectAppInfo(infos []resource, versionState string) (resource, error) {
 	for _, info := range infos {
 		state := stringAttribute(info, "state")
 		states = append(states, state)
-		if versionState != "" && state == versionState {
+		if appInfoStateMatchesVersion(state, versionState) {
 			matches = append(matches, info)
 		}
 	}
@@ -322,6 +354,36 @@ func selectAppInfo(infos []resource, versionState string) (resource, error) {
 	}
 	sort.Strings(states)
 	return resource{}, fmt.Errorf("could not select one app info for version state %q from app info states %q", versionState, states)
+}
+
+func appInfoStateMatchesVersion(infoState, versionState string) bool {
+	if infoState != "" && infoState == versionState {
+		return true
+	}
+	allowed := map[string]map[string]bool{
+		"PREPARE_FOR_SUBMISSION": {
+			"PREPARE_FOR_SUBMISSION": true, "DEVELOPER_REJECTED": true, "METADATA_REJECTED": true,
+			"REJECTED": true, "INVALID_BINARY": true, "WAITING_FOR_EXPORT_COMPLIANCE": true,
+		},
+		"READY_FOR_REVIEW":       {"READY_FOR_REVIEW": true, "WAITING_FOR_REVIEW": true, "IN_REVIEW": true},
+		"PENDING_RELEASE":        {"ACCEPTED": true, "PENDING_DEVELOPER_RELEASE": true, "PENDING_APPLE_RELEASE": true, "PROCESSING_FOR_DISTRIBUTION": true},
+		"READY_FOR_SALE":         {"READY_FOR_DISTRIBUTION": true},
+		"REPLACED_WITH_NEW_INFO": {"REPLACED_WITH_NEW_VERSION": true},
+	}
+	return allowed[infoState][versionState]
+}
+
+func accessibilityStatePriority(state string) int {
+	switch state {
+	case "DRAFT":
+		return 3
+	case "PUBLISHED":
+		return 2
+	case "REPLACED":
+		return 1
+	default:
+		return 0
+	}
 }
 
 var infoFields = map[string]string{
@@ -360,6 +422,9 @@ var versionFields = map[string]string{
 }
 
 func (c *Client) ApplyMetadata(ctx context.Context, remote Metadata, locales []string, changes []Change) error {
+	if err := ValidatePlan(remote, locales, changes); err != nil {
+		return fmt.Errorf("validate metadata plan: %w", err)
+	}
 	grouped := map[string]map[string]string{}
 	global := map[string]map[string]any{}
 	accessibilityChanges := map[string]map[string]string{}
@@ -765,9 +830,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, requestBody, r
 			if requestID := resp.Header.Get("X-Request-ID"); requestID != "" {
 				messages = append(messages, "request ID "+requestID)
 			}
-			return fmt.Errorf("the App Store Connect API reported %s", strings.Join(messages, "; "))
+			return &apiStatusError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("the App Store Connect API reported %s", strings.Join(messages, "; "))}
 		}
-		return fmt.Errorf("the App Store Connect API returned %s", resp.Status)
+		return &apiStatusError{StatusCode: resp.StatusCode, Message: fmt.Sprintf("the App Store Connect API returned %s", resp.Status)}
 	}
 }
 

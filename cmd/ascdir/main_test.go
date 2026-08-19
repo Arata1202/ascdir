@@ -29,6 +29,17 @@ type mockStoreClient struct {
 	fetchMetadata   func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
 	applyMetadata   func(context.Context, appstore.Metadata, []string, []appstore.Change) error
 	listPricePoints func(context.Context, string, string) ([]appstore.PricePoint, error)
+	resolveAppID    func(context.Context, string, string) (string, error)
+}
+
+func (m mockStoreClient) ResolveAppID(ctx context.Context, appID, bundleID string) (string, error) {
+	if m.resolveAppID != nil {
+		return m.resolveAppID(ctx, appID, bundleID)
+	}
+	if appID != "" {
+		return appID, nil
+	}
+	return "", errors.New("ResolveAppID should not be called")
 }
 
 func (m mockStoreClient) ListPricePoints(ctx context.Context, appID, territory string) ([]appstore.PricePoint, error) {
@@ -98,6 +109,33 @@ func TestRunPricePoints(t *testing.T) {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("output %q does not contain %q", stdout.String(), expected)
 		}
+	}
+}
+
+func TestRunPricePointsResolvesBundleIDOnlyConfig(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	cfg := config.New("", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	if err := config.Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	client := mockStoreClient{
+		resolveAppID: func(_ context.Context, appID, bundleID string) (string, error) {
+			if appID != "" || bundleID != "com.example.app" {
+				t.Fatalf("identity = %q %q", appID, bundleID)
+			}
+			return "resolved-app", nil
+		},
+		listPricePoints: func(_ context.Context, appID, _ string) ([]appstore.PricePoint, error) {
+			if appID != "resolved-app" {
+				t.Fatalf("app ID = %q", appID)
+			}
+			return nil, nil
+		},
+	}
+	environment, _, _ := testEnvironment(client)
+	if err := runWithEnvironment(context.Background(), []string{"price-points", "--config", path, "--territory", "USA"}, environment); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -493,6 +531,15 @@ func TestRunPushRequiresExplicitPermissionToClear(t *testing.T) {
 	}
 	environment, _, _ := testEnvironment(client)
 	args := []string{"push", "--config", configPath}
+	if err := runWithEnvironment(context.Background(), append(args, "--dry-run"), environment); err == nil || !strings.Contains(err.Error(), "--allow-empty") {
+		t.Fatalf("dry-run did not preflight safeguards: %v", err)
+	}
+	if err := runWithEnvironment(context.Background(), append(args, "--dry-run", "--allow-empty"), environment); err != nil {
+		t.Fatal(err)
+	}
+	if applyCalls != 0 {
+		t.Fatalf("dry-run apply calls = %d", applyCalls)
+	}
 	if err := runWithEnvironment(context.Background(), args, environment); err == nil || !strings.Contains(err.Error(), "--allow-empty") {
 		t.Fatalf("unexpected error: %v", err)
 	}

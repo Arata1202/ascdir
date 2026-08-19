@@ -80,7 +80,7 @@ func TestApplyMetadataCreatesLocalizationBeforeUploadingFileAsset(t *testing.T) 
 	client := testClient(t, server.URL)
 	client.httpClient = server.Client()
 	remote := Metadata{AppInfoID: "info-1", VersionID: "version-1", Localizations: map[string]Localization{}}
-	changes := []Change{{AssetSet: &AssetSetChange{
+	changes := []Change{{Locale: "en-US", Field: "name", After: "Example"}, {AssetSet: &AssetSetChange{
 		Kind: "screenshots", Locale: "en-US", DisplayType: "APP_IPHONE_67",
 		After: []Asset{{FileName: "01.png", Path: assetPath, Size: int64(len(content)), Checksum: checksum}},
 	}}}
@@ -397,7 +397,7 @@ func TestApplyMetadataCreatesMissingCounterpartLocalization(t *testing.T) {
 	defer server.Close()
 	client := testClient(t, server.URL)
 	remote := Metadata{AppInfoID: "info-1", VersionID: "version-1", Localizations: map[string]Localization{}}
-	changes := []Change{{Locale: "fr-FR", Field: "description", After: "Description"}}
+	changes := []Change{{Locale: "fr-FR", Field: "name", After: "Exemple"}, {Locale: "fr-FR", Field: "description", After: "Description"}}
 	if err := client.ApplyMetadata(context.Background(), remote, []string{"fr-FR"}, changes); err != nil {
 		t.Fatal(err)
 	}

@@ -6,7 +6,7 @@
 
 - Keep short values in self-documenting YAML and long-form content in Markdown
 - Pull existing metadata from App Store Connect
-- Preview exact changes before writing with `push --dry-run`
+- Preview concise field- and asset-level changes before writing with `push --dry-run`
 - Protect non-empty remote fields from accidental clearing
 - Validate common App Store character limits and URLs locally
 - Manage multiple locales from one `ascdir.yaml`

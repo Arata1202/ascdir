@@ -54,6 +54,9 @@ func (c *Client) ListPricePoints(ctx context.Context, appID, territory string) (
 func (c *Client) fetchPricing(ctx context.Context, result *Metadata) error {
 	var scheduleResponse singleResponse
 	if err := c.doJSON(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(result.AppID)+"/appPriceSchedule", nil, &scheduleResponse); err != nil {
+		if isAPIStatus(err, http.StatusNotFound) {
+			return nil
+		}
 		return fmt.Errorf("read app price schedule: %w", err)
 	}
 	result.PriceScheduleID = scheduleResponse.Data.ID

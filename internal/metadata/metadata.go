@@ -763,7 +763,7 @@ func Select(cfg config.Config, source appstore.Metadata) appstore.Metadata {
 		for field := range declaration.Map() {
 			values[field] = source.Accessibility[deviceFamily].Values[field]
 		}
-		selected.Accessibility[deviceFamily] = appstore.AccessibilityDeclaration{ID: source.Accessibility[deviceFamily].ID, Values: values}
+		selected.Accessibility[deviceFamily] = appstore.AccessibilityDeclaration{ID: source.Accessibility[deviceFamily].ID, State: source.Accessibility[deviceFamily].State, Values: values}
 	}
 	if cfg.Assets.Screenshots != "" {
 		selected.Screenshots = source.Screenshots
@@ -802,8 +802,8 @@ func PrintChanges(w io.Writer, changes []appstore.Change) {
 	for _, change := range changes {
 		if change.AssetSet != nil {
 			fmt.Fprintf(w, "assets.%s.%s.%s\n", change.AssetSet.Kind, change.AssetSet.Locale, change.AssetSet.DisplayType)
-			fmt.Fprintf(w, "- %d asset(s)\n", len(change.AssetSet.Before))
-			fmt.Fprintf(w, "+ %d asset(s)\n", len(change.AssetSet.After))
+			printAssetList(w, "-", change.AssetSet.Before)
+			printAssetList(w, "+", change.AssetSet.After)
 			continue
 		}
 		if change.Locale == "" {
@@ -823,7 +823,9 @@ func PrintChanges(w io.Writer, changes []appstore.Change) {
 			} else if change.Field == "pricing.schedule" {
 				prefix = "pricing"
 			}
-			fmt.Fprintf(w, "%s.%s\n", prefix, change.Field)
+			field := change.Field
+			field = strings.TrimPrefix(field, prefix+".")
+			fmt.Fprintf(w, "%s.%s\n", prefix, field)
 		} else {
 			fmt.Fprintf(w, "%s.%s\n", change.Locale, change.Field)
 		}
@@ -832,8 +834,43 @@ func PrintChanges(w io.Writer, changes []appstore.Change) {
 	}
 }
 
+func printAssetList(w io.Writer, marker string, assets []appstore.Asset) {
+	if len(assets) == 0 {
+		fmt.Fprintf(w, "%s (none)\n", marker)
+		return
+	}
+	for _, asset := range assets {
+		checksum := asset.Checksum
+		if len(checksum) > 12 {
+			checksum = checksum[:12]
+		}
+		if checksum == "" {
+			fmt.Fprintf(w, "%s %s\n", marker, asset.FileName)
+		} else {
+			fmt.Fprintf(w, "%s %s sha256:%s\n", marker, asset.FileName, checksum)
+		}
+	}
+}
+
 func summarize(value string) string {
-	value = strings.ReplaceAll(value, "\n", "\\n")
+	var escaped strings.Builder
+	for _, r := range value {
+		switch r {
+		case '\n':
+			escaped.WriteString("\\n")
+		case '\r':
+			escaped.WriteString("\\r")
+		case '\t':
+			escaped.WriteString("\\t")
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&escaped, "\\u%04x", r)
+			} else {
+				escaped.WriteRune(r)
+			}
+		}
+	}
+	value = escaped.String()
 	const limit = 120
 	if utf8.RuneCountInString(value) <= limit {
 		return value
@@ -873,6 +910,9 @@ func Validate(values appstore.Metadata) []string {
 		}
 	}
 	for field, value := range values.Values {
+		if hasDisallowedControl(value) {
+			problems = append(problems, fmt.Sprintf("metadata.%s contains a disallowed control character", field))
+		}
 		if strings.HasPrefix(field, "availability.territories.") && strings.HasSuffix(field, ".release_date") && value != "" {
 			if _, err := time.Parse("2006-01-02", value); err != nil {
 				problems = append(problems, fmt.Sprintf("%s must use YYYY-MM-DD", field))
@@ -945,6 +985,12 @@ func Validate(values appstore.Metadata) []string {
 			if length > limit {
 				problems = append(problems, fmt.Sprintf("%s.%s is %d characters; maximum is %d", locale, field, length, limit))
 			}
+			if field == "name" && value != "" && length < 2 {
+				problems = append(problems, fmt.Sprintf("%s.name is %d character; minimum is 2", locale, length))
+			}
+			if hasDisallowedControl(value) {
+				problems = append(problems, fmt.Sprintf("%s.%s contains a disallowed control character", locale, field))
+			}
 		}
 		if value, configured := fields["keywords"]; configured && len([]byte(value)) > 100 {
 			problems = append(problems, fmt.Sprintf("%s.keywords is %d bytes; maximum is 100", locale, len([]byte(value))))
@@ -970,6 +1016,15 @@ func Validate(values appstore.Metadata) []string {
 	}
 	sort.Strings(problems)
 	return problems
+}
+
+func hasDisallowedControl(value string) bool {
+	for _, r := range value {
+		if r < 0x20 && r != '\n' && r != '\r' && r != '\t' {
+			return true
+		}
+	}
+	return false
 }
 
 func validHTTPURL(value string) bool {

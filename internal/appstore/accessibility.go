@@ -44,6 +44,10 @@ func (c *Client) applyAccessibilityChanges(ctx context.Context, remote Metadata,
 			attributes[remoteField] = value
 		}
 		resourceID := remote.Accessibility[deviceFamily].ID
+		state := remote.Accessibility[deviceFamily].State
+		if resourceID != "" && len(attributes) > 0 && state != "" && state != "DRAFT" {
+			return fmt.Errorf("accessibility.%s declaration is %s; feature attributes can only be changed while DRAFT", deviceFamily, state)
+		}
 		if resourceID == "" {
 			attributes["deviceFamily"] = deviceFamily
 			body := map[string]any{"data": map[string]any{
