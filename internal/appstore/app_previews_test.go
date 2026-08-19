@@ -141,6 +141,8 @@ func TestUploadAppPreviewCommitsVideo(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appPreviews/preview-new":
 			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/appPreviews/preview-new":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("preview-new", "appPreviews", map[string]any{"videoDeliveryState": map[string]any{"state": "COMPLETE"}})})
 		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appPreviewSets/set-1/relationships/appPreviews":
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -154,7 +156,7 @@ func TestUploadAppPreviewCommitsVideo(t *testing.T) {
 	if err := client.applyAppPreviewSet(context.Background(), change); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"POST /v1/appPreviews", "PUT /upload", "PATCH /v1/appPreviews/preview-new", "PATCH /v1/appPreviewSets/set-1/relationships/appPreviews"}
+	want := []string{"POST /v1/appPreviews", "PUT /upload", "PATCH /v1/appPreviews/preview-new", "GET /v1/appPreviews/preview-new", "PATCH /v1/appPreviewSets/set-1/relationships/appPreviews"}
 	if len(calls) != len(want) {
 		t.Fatalf("calls = %#v", calls)
 	}

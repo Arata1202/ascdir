@@ -19,13 +19,14 @@ import (
 const defaultBaseURL = "https://api.appstoreconnect.apple.com"
 
 type Client struct {
-	credentials Credentials
-	baseURL     string
-	httpClient  *http.Client
-	now         func() time.Time
-	maxRetries  int
-	sleep       func(context.Context, time.Duration) error
-	jitter      func(time.Duration) time.Duration
+	credentials       Credentials
+	baseURL           string
+	httpClient        *http.Client
+	now               func() time.Time
+	maxRetries        int
+	sleep             func(context.Context, time.Duration) error
+	jitter            func(time.Duration) time.Duration
+	assetPollInterval time.Duration
 }
 
 type Option func(*Client)
@@ -139,13 +140,14 @@ func NewClient(credentials Credentials, baseURL string, options ...Option) *Clie
 		baseURL = defaultBaseURL
 	}
 	client := &Client{
-		credentials: credentials,
-		baseURL:     strings.TrimRight(baseURL, "/"),
-		httpClient:  &http.Client{Timeout: 30 * time.Second},
-		now:         time.Now,
-		maxRetries:  3,
-		sleep:       sleepContext,
-		jitter:      retryJitter,
+		credentials:       credentials,
+		baseURL:           strings.TrimRight(baseURL, "/"),
+		httpClient:        &http.Client{Timeout: 10 * time.Minute},
+		now:               time.Now,
+		maxRetries:        3,
+		sleep:             sleepContext,
+		jitter:            retryJitter,
+		assetPollInterval: time.Second,
 	}
 	for _, option := range options {
 		option(client)

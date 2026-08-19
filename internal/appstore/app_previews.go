@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-const maximumAppPreviewDownloadSize = 1 << 30
+const maximumAppPreviewDownloadSize = 500_000_000
 
 func (c *Client) fetchAppPreviews(ctx context.Context, result *Metadata, download bool) (err error) {
 	var downloaded []string
@@ -44,6 +44,9 @@ func (c *Client) fetchAppPreviews(ctx context.Context, result *Metadata, downloa
 			}
 			assets := make([]Asset, 0, len(items))
 			for _, item := range items {
+				if err := validateFetchedDeliveryState(item, "videoDeliveryState"); err != nil {
+					return fmt.Errorf("app preview %s/%s/%s: %w", locale, previewType, stringAttribute(item, "fileName"), err)
+				}
 				asset := Asset{
 					ID: item.ID, FileName: stringAttribute(item, "fileName"),
 					Checksum: strings.ToLower(stringAttribute(item, "sourceFileChecksum")),
@@ -111,7 +114,7 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 	}
 	available := map[string][]Asset{}
 	for _, asset := range change.Before {
-		key := asset.Checksum
+		key := asset.Checksum + "\x00" + asset.FileName
 		available[key] = append(available[key], asset)
 	}
 	orderedIDs := make([]string, 0, len(change.After))
@@ -134,7 +137,7 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 	}()
 	kept := map[string]bool{}
 	for _, desired := range change.After {
-		key := desired.Checksum
+		key := desired.Checksum + "\x00" + desired.FileName
 		matches := available[key]
 		if len(matches) > 0 {
 			match := matches[0]
@@ -178,6 +181,9 @@ func (c *Client) applyAppPreviewSet(ctx context.Context, change AssetSetChange) 
 }
 
 func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset) (_ string, err error) {
+	if err := verifyAssetUnchanged(asset); err != nil {
+		return "", fmt.Errorf("validate %s: %w", asset.FileName, err)
+	}
 	size := asset.Size
 	if size == 0 {
 		size = int64(len(asset.Content))
@@ -215,6 +221,9 @@ func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset
 			return "", fmt.Errorf("upload %s: %w", asset.FileName, err)
 		}
 	}
+	if err := verifyAssetUnchanged(asset); err != nil {
+		return "", fmt.Errorf("verify uploaded %s: %w", asset.FileName, err)
+	}
 	checksum := asset.Checksum
 	if checksum == "" && len(asset.Content) > 0 {
 		sum := md5.Sum(asset.Content)
@@ -229,6 +238,9 @@ func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset
 	}
 	if err := c.patchResource(ctx, "appPreviews", response.Data.ID, commit); err != nil {
 		return "", fmt.Errorf("commit %s: %w", asset.FileName, err)
+	}
+	if err := c.waitForAssetDelivery(ctx, "appPreviews", response.Data.ID, "videoDeliveryState"); err != nil {
+		return "", fmt.Errorf("process %s: %w", asset.FileName, err)
 	}
 	committed = true
 	return response.Data.ID, nil

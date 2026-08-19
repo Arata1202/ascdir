@@ -13,6 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Reject missing asset directories instead of treating them as an intentional empty set, and require confirmation before pull removes local assets.
 - Validate downloaded asset checksums and metadata UTF-8, clean up failed App Preview downloads, and roll back multi-file pull failures.
 - Preserve nested YAML comments and support `init --config` paths whose parent directories do not exist yet.
+- Wait for screenshot and App Preview processing to complete before replacing existing assets, surface Apple delivery failures, detect filename-only renames, and reject files changed during upload.
+- Reject malformed or oversized App Preview containers and invalid poster-frame mappings before contacting App Store Connect.
+- Use a 10-minute default HTTP timeout so large App Preview transfers are not limited to 30 seconds.
 
 ## [1.1.3] - 2026-08-19
 

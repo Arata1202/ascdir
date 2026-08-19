@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,6 +66,8 @@ func TestUploadScreenshotCommitsThenOrdersAsset(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appScreenshots/shot-new":
 			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/appScreenshots/shot-new":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("shot-new", "appScreenshots", map[string]any{"assetDeliveryState": map[string]any{"state": "COMPLETE"}})})
 		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appScreenshotSets/set-1/relationships/appScreenshots":
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -76,7 +81,7 @@ func TestUploadScreenshotCommitsThenOrdersAsset(t *testing.T) {
 	if err := client.applyScreenshotSet(context.Background(), change); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"POST /v1/appScreenshots", "PUT /upload", "PATCH /v1/appScreenshots/shot-new", "PATCH /v1/appScreenshotSets/set-1/relationships/appScreenshots"}
+	want := []string{"POST /v1/appScreenshots", "PUT /upload", "PATCH /v1/appScreenshots/shot-new", "GET /v1/appScreenshots/shot-new", "PATCH /v1/appScreenshotSets/set-1/relationships/appScreenshots"}
 	if len(calls) != len(want) {
 		t.Fatalf("calls = %#v", calls)
 	}
@@ -139,5 +144,103 @@ func TestUploadScreenshotCleansReservationAfterUploadFailure(t *testing.T) {
 	}
 	if !deleted {
 		t.Fatal("reserved screenshot was not deleted")
+	}
+}
+
+func TestUploadScreenshotRejectsFileChangedDuringUpload(t *testing.T) {
+	t.Parallel()
+	content := []byte("original asset")
+	path := filepath.Join(t.TempDir(), "01.png")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := md5.Sum(content)
+	checksum := hex.EncodeToString(sum[:])
+	committed := false
+	cleaned := false
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/appScreenshots":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("shot-new", "appScreenshots", map[string]any{
+				"uploadOperations": []any{map[string]any{"method": "PUT", "url": server.URL + "/upload", "offset": 0, "length": len(content)}},
+			})})
+		case r.Method == http.MethodPut && r.URL.Path == "/upload":
+			if err := os.WriteFile(path, []byte(strings.Repeat("x", len(content))), 0o600); err != nil {
+				t.Error(err)
+			}
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPatch:
+			committed = true
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/appScreenshots/shot-new":
+			cleaned = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	client.httpClient = server.Client()
+	_, err := client.uploadScreenshot(context.Background(), "set-1", Asset{FileName: "01.png", Path: path, Size: int64(len(content)), Checksum: checksum})
+	if err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("error = %v", err)
+	}
+	if committed || !cleaned {
+		t.Fatalf("committed = %v, cleaned = %v", committed, cleaned)
+	}
+}
+
+func TestFailedScreenshotDeliveryDoesNotDeleteExistingAsset(t *testing.T) {
+	t.Parallel()
+	content := []byte("replacement")
+	sum := md5.Sum(content)
+	oldDeleted := false
+	newDeleted := false
+	orderUpdated := false
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/appScreenshots":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("shot-new", "appScreenshots", map[string]any{
+				"uploadOperations": []any{map[string]any{"method": "PUT", "url": server.URL + "/upload", "offset": 0, "length": len(content)}},
+			})})
+		case r.Method == http.MethodPut && r.URL.Path == "/upload":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appScreenshots/shot-new":
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/appScreenshots/shot-new":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("shot-new", "appScreenshots", map[string]any{
+				"assetDeliveryState": map[string]any{"state": "FAILED", "errors": []any{map[string]any{"description": "invalid dimensions"}}},
+			})})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/appScreenshots/shot-new":
+			newDeleted = true
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/appScreenshots/shot-old":
+			oldDeleted = true
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodPatch && strings.Contains(r.URL.Path, "/relationships/"):
+			orderUpdated = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	client.httpClient = server.Client()
+	change := AssetSetChange{Kind: "screenshots", Locale: "en-US", DisplayType: "APP_IPHONE_67", SetID: "set-1",
+		Before: []Asset{{ID: "shot-old", FileName: "old.png", Checksum: "old"}},
+		After:  []Asset{{FileName: "new.png", Content: content, Checksum: hex.EncodeToString(sum[:])}},
+	}
+	err := client.applyScreenshotSet(context.Background(), change)
+	if err == nil || !strings.Contains(err.Error(), "invalid dimensions") {
+		t.Fatalf("error = %v", err)
+	}
+	if oldDeleted || orderUpdated || !newDeleted {
+		t.Fatalf("oldDeleted = %v, orderUpdated = %v, newDeleted = %v", oldDeleted, orderUpdated, newDeleted)
 	}
 }
