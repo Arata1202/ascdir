@@ -24,6 +24,14 @@ brew install Arata1202/tap/ascdir
 
 With [aqua](https://aquaproj.github.io/):
 
+Initialize the project first if the current directory does not already contain an `aqua.yaml`:
+
+```sh
+aqua init
+```
+
+Then add and install ascdir:
+
 ```sh
 aqua g -i Arata1202/ascdir
 aqua install
