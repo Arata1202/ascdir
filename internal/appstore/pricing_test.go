@@ -82,3 +82,19 @@ func TestListPricePoints(t *testing.T) {
 		t.Fatalf("points = %#v", points)
 	}
 }
+
+func TestFetchPricingTreatsNotFoundAsUncreated(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{"status": "404", "code": "NOT_FOUND", "title": "Not Found", "detail": "missing"}}})
+	}))
+	defer server.Close()
+	metadata := Metadata{AppID: "app-1", Values: map[string]string{}}
+	if err := testClient(t, server.URL).fetchPricing(context.Background(), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.PriceScheduleID != "" {
+		t.Fatalf("schedule ID = %q", metadata.PriceScheduleID)
+	}
+}

@@ -16,6 +16,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Wait for screenshot and App Preview processing to complete before replacing existing assets, surface Apple delivery failures, detect filename-only renames, and reject files changed during upload.
 - Reject malformed or oversized App Preview containers and invalid poster-frame mappings before contacting App Store Connect.
 - Use a 10-minute default HTTP timeout so large App Preview transfers are not limited to 30 seconds.
+- Validate complete push plans, including dry runs, before any App Store Connect mutation.
+- Handle App Info and App Store Version state mappings, draft accessibility declarations, and first-time availability and pricing resources correctly.
+- Require names for new App Info localizations and resolve bundle-ID-only configurations for `price-points`.
+- Show unambiguous availability, pricing, and asset diffs and protect sensitive age-rating changes.
 
 ## [1.1.3] - 2026-08-19
 
