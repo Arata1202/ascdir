@@ -9,7 +9,41 @@ permissions:
   contents: write
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26.6"
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - run: go mod verify
+      - run: go test -race -shuffle=on -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Enforce coverage threshold
+        run: |
+          go tool cover -func=coverage.out | tail -n 1
+          coverage="$(go tool cover -func=coverage.out | awk '/^total:/ { gsub(/%/, "", $3); print $3 }')"
+          awk -v coverage="$coverage" 'BEGIN { if (coverage < 75) { print "coverage below 75%: " coverage "%"; exit 1 } }'
+      - run: go vet ./...
+      - name: Validate installer syntax
+        run: sh -n install.sh
+      - name: Static analysis
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.1 ./...
+      - name: Validate GitHub Actions
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1
+        with:
+          go-version-input: "1.26.6"
+          go-package: ./...
+          repo-checkout: false
+          cache: false
+
   goreleaser:
+    needs: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

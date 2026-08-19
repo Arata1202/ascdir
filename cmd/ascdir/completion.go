@@ -75,7 +75,7 @@ _ascdir() {
   fi
 }
 
-_ascdir "$@"
+compdef _ascdir ascdir
 `
 
 const fishCompletion = `complete -c ascdir -f

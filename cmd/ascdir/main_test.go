@@ -370,6 +370,15 @@ func TestRunInitPullAndPush(t *testing.T) {
 	}
 }
 
+func TestPrintInitNextStepsQuotesConfigPathForShell(t *testing.T) {
+	var output bytes.Buffer
+	printInitNextSteps(&output, "configs/release candidate's ascdir.yaml", nil)
+	want := `--config 'configs/release candidate'"'"'s ascdir.yaml'`
+	if count := strings.Count(output.String(), want); count != 2 {
+		t.Fatalf("quoted config path count = %d, want 2; output = %q", count, output.String())
+	}
+}
+
 func TestRunInitForceReplacesVersionOneConfiguration(t *testing.T) {
 	t.Parallel()
 	directory := t.TempDir()

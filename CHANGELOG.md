@@ -20,6 +20,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Handle App Info and App Store Version state mappings, draft accessibility declarations, and first-time availability and pricing resources correctly.
 - Require names for new App Info localizations and resolve bundle-ID-only configurations for `price-points`.
 - Show unambiguous availability, pricing, and asset diffs and protect sensitive age-rating changes.
+- Register generated Zsh completion scripts when sourced instead of executing the completion function immediately.
+- Shell-quote configuration paths in the commands printed after `init`.
+
+### Changed
+
+- Require the release workflow to pass the same formatting, race, coverage, vet, static-analysis, workflow, and vulnerability checks as pull requests before publishing artifacts.
 
 ## [1.1.3] - 2026-08-19
 

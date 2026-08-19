@@ -381,6 +381,7 @@ func emptyManagedValueGroups(cfg config.Config, local appstore.Metadata) map[str
 }
 
 func printInitNextSteps(writer io.Writer, configPath string, emptyValues map[string][]string) {
+	quotedConfigPath := shellQuote(configPath)
 	fmt.Fprintln(writer, "Next steps:")
 	if len(emptyValues) > 0 {
 		fmt.Fprintln(writer, "  1. Fill these empty managed values, or remove optional keys you do not want ascdir to manage:")
@@ -396,8 +397,20 @@ func printInitNextSteps(writer io.Writer, configPath string, emptyValues map[str
 		fmt.Fprintf(writer, "  1. Review %s and its referenced text files.\n", configPath)
 	}
 	fmt.Fprintln(writer, "  2. Optionally enable screenshots, App Previews, availability, or pricing in the YAML.")
-	fmt.Fprintf(writer, "  3. Run `ascdir check --config %s`, then `ascdir push --config %s --dry-run`.\n", configPath, configPath)
+	fmt.Fprintln(writer, "  3. Run:")
+	fmt.Fprintf(writer, "     ascdir check --config %s\n", quotedConfigPath)
+	fmt.Fprintf(writer, "     ascdir push --config %s --dry-run\n", quotedConfigPath)
 	fmt.Fprintln(writer, "Minimal example: https://github.com/Arata1202/ascdir/blob/main/examples/ascdir.minimal.yaml")
+}
+
+// shellQuote returns a POSIX shell word that is safe to copy from the init output.
+func shellQuote(value string) string {
+	if value != "" && strings.IndexFunc(value, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && !(r >= '0' && r <= '9') && !strings.ContainsRune("_@%+=:,./-", r)
+	}) == -1 {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func runPull(ctx context.Context, args []string, environment commandEnvironment) error {

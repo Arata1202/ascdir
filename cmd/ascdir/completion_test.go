@@ -25,3 +25,12 @@ func TestRunCompletionRejectsInvalidShell(t *testing.T) {
 		t.Fatal("invalid shell succeeded")
 	}
 }
+
+func TestZshCompletionRegistersFunction(t *testing.T) {
+	if strings.Contains(zshCompletion, `_ascdir "$@"`) {
+		t.Fatal("zsh completion executes the function while sourcing")
+	}
+	if !strings.Contains(zshCompletion, "compdef _ascdir ascdir") {
+		t.Fatal("zsh completion does not register _ascdir for ascdir")
+	}
+}
