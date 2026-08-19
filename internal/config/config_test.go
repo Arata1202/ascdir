@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestSaveAndLoad(t *testing.T) {
@@ -107,6 +109,39 @@ func TestSaveCommentsOptionalSections(t *testing.T) {
 			t.Fatalf("generated optional section comments are missing %q:\n%s", expected, data)
 		}
 	}
+
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	root := document.Content[0]
+	assertCommentPlacement(t, root, "availability", "Optional territory availability and preorders", false)
+	assertCommentPlacement(t, root, "pricing", "Optional append-only price schedule", false)
+	assertCommentPlacement(t, mappingValue(root, "availability"), "available_in_new_territories", "Initial setting for territories Apple adds later", true)
+	assertCommentPlacement(t, mappingValue(root, "pricing"), "base_territory", "Three-letter App Store base territory ID", true)
+}
+
+func assertCommentPlacement(t *testing.T, mapping *yaml.Node, field, comment string, inline bool) {
+	t.Helper()
+	comment = "# " + comment
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		t.Fatalf("mapping for %q is missing", field)
+	}
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		key, value := mapping.Content[index], mapping.Content[index+1]
+		if key.Value != field {
+			continue
+		}
+		if inline {
+			if value.LineComment != comment || key.HeadComment != "" {
+				t.Fatalf("%s comment placement: key head = %q, value line = %q", field, key.HeadComment, value.LineComment)
+			}
+		} else if key.HeadComment != comment || value.LineComment != "" {
+			t.Fatalf("%s comment placement: key head = %q, value line = %q", field, key.HeadComment, value.LineComment)
+		}
+		return
+	}
+	t.Fatalf("field %q is missing", field)
 }
 
 func TestEncodeUpdatedValuesUpdatesPreviewFrameTimes(t *testing.T) {
@@ -267,16 +302,13 @@ localizations:
 
 func TestExamplesLoadAndValidate(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"ascdir.minimal.yaml"} {
-		path := filepath.Join("..", "..", "examples", name)
-		cfg, err := Load(path)
-		if err != nil {
-			t.Errorf("%s: %v", name, err)
-			continue
-		}
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("%s is invalid: %v", name, err)
-		}
+	path := filepath.Join("..", "..", "examples", "ascdir.minimal.yaml")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("minimal example is invalid: %v", err)
 	}
 }
 
