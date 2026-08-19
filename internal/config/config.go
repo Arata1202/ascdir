@@ -567,7 +567,12 @@ func addSchemaComments(document *yaml.Node) {
 		root = root.Content[0]
 	}
 	addMappingComments(root, map[string]string{
-		"version": "ascdir configuration schema version",
+		"version":       "ascdir configuration schema version",
+		"localizations": "Per-locale storefront text",
+		"age_rating":    "Managed age-rating declaration",
+		"accessibility": "Optional Accessibility Nutrition Labels",
+		"availability":  "Optional territory availability and preorders",
+		"pricing":       "Optional append-only price schedule",
 	})
 	addMappingComments(mappingValue(root, "app"), map[string]string{
 		"id":        "App Store Connect app ID; populated by init",
@@ -575,22 +580,6 @@ func addSchemaComments(document *yaml.Node) {
 		"platform":  "IOS, MAC_OS, TV_OS, or VISION_OS",
 		"version":   "App Store version to manage",
 	})
-	localizations := mappingValue(root, "localizations")
-	valueComments := map[string]string{
-		"name":                "App Store display name, up to 30 characters",
-		"subtitle":            "Short summary displayed below the name, up to 30 characters",
-		"keywords":            "Comma-separated search keywords, up to 100 bytes",
-		"support_url":         "Public HTTP(S) support page",
-		"marketing_url":       "Optional public HTTP(S) marketing page",
-		"privacy_policy_url":  "Public HTTP(S) privacy policy",
-		"privacy_choices_url": "Optional public HTTP(S) privacy choices page",
-	}
-	fileComments := map[string]string{
-		"description":         "Required plain-text product description; Markdown is not rendered",
-		"promotional_text":    "Optional plain-text promotion, up to 170 characters",
-		"whats_new":           "Plain-text release notes; required for app updates",
-		"privacy_policy_text": "Required plain-text tvOS privacy policy; TV_OS only",
-	}
 	addMappingComments(mappingValue(root, "metadata"), map[string]string{
 		"copyright":                  "Year and rights holder, for example: 2026 Example, Inc.",
 		"accessibility_url":          "Optional public HTTP(S) accessibility information page",
@@ -618,44 +607,11 @@ func addSchemaComments(document *yaml.Node) {
 		"available_in_new_territories": "Initial setting for territories Apple adds later",
 		"territories":                  "Managed App Store territories; omitted territories remain unmanaged",
 	})
-	if territories := mappingValue(availability, "territories"); territories != nil {
-		for index := 0; index+1 < len(territories.Content); index += 2 {
-			addMappingComments(territories.Content[index+1], map[string]string{
-				"available":         "Whether the app is available in this territory",
-				"release_date":      "Optional release or preorder date in YYYY-MM-DD format",
-				"pre_order_enabled": "Whether preorder is enabled in this territory",
-			})
-		}
-	}
 	pricing := mappingValue(root, "pricing")
 	addMappingComments(pricing, map[string]string{
 		"base_territory":   "Three-letter App Store base territory ID",
 		"scheduled_prices": "Append-only price schedule using App Store price-point IDs",
 	})
-	if scheduledPrices := mappingValue(pricing, "scheduled_prices"); scheduledPrices != nil && scheduledPrices.Kind == yaml.SequenceNode {
-		for _, scheduledPrice := range scheduledPrices.Content {
-			addMappingComments(scheduledPrice, map[string]string{
-				"price_point_id": "App Store Connect price-point ID",
-				"start_date":     "Optional schedule start date in YYYY-MM-DD format",
-				"end_date":       "Optional schedule end date in YYYY-MM-DD format",
-			})
-		}
-	}
-	addMappingComments(mappingValue(root, "age_rating"), ageRatingComments())
-	accessibility := mappingValue(root, "accessibility")
-	if accessibility != nil {
-		for index := 0; index+1 < len(accessibility.Content); index += 2 {
-			addMappingComments(accessibility.Content[index+1], accessibilityComments())
-		}
-	}
-	if localizations == nil {
-		return
-	}
-	for index := 0; index+1 < len(localizations.Content); index += 2 {
-		locale := localizations.Content[index+1]
-		addMappingComments(mappingValue(locale, "values"), valueComments)
-		addMappingComments(mappingValue(locale, "files"), fileComments)
-	}
 }
 
 func addMappingComments(mapping *yaml.Node, comments map[string]string) {
@@ -664,7 +620,12 @@ func addMappingComments(mapping *yaml.Node, comments map[string]string) {
 	}
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
 		key, value := mapping.Content[index], mapping.Content[index+1]
-		value.LineComment = comments[key.Value]
+		comment := comments[key.Value]
+		if value.Kind == yaml.ScalarNode {
+			value.LineComment = comment
+		} else {
+			key.HeadComment = comment
+		}
 	}
 }
 
@@ -1072,17 +1033,6 @@ func ageRatingFieldNames() []string {
 		"violence_cartoon_or_fantasy", "violence_realistic_prolonged_graphic_or_sadistic", "violence_realistic",
 		"age_rating_override", "korea_age_rating_override", "developer_age_rating_info_url",
 	}
-}
-
-func ageRatingComments() map[string]string {
-	comments := map[string]string{}
-	for _, field := range ageRatingFieldNames() {
-		comments[field] = "Apple age rating declaration answer"
-	}
-	comments["kids_age_band"] = "Made for Kids: FIVE_AND_UNDER, SIX_TO_EIGHT, NINE_TO_ELEVEN, or empty"
-	comments["age_rating_override"] = "Optional computed-rating override: NONE, NINE_PLUS, THIRTEEN_PLUS, SIXTEEN_PLUS, EIGHTEEN_PLUS, or UNRATED"
-	comments["developer_age_rating_info_url"] = "Optional public HTTP(S) age rating information page"
-	return comments
 }
 
 func stringPointer(value string) *string { return &value }

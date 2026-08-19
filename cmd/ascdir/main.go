@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -331,7 +332,67 @@ func runInit(ctx context.Context, args []string, environment commandEnvironment)
 		return err
 	}
 	fmt.Fprintf(environment.stdout, "Created %s with %d localization(s).\n", *configPath, len(locales))
+	var emptyValues map[string][]string
+	generated, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintf(environment.stderr, "warning: could not inspect generated project: %v\n", err)
+	} else if local, err := metadata.ReadLocal(generated, *configPath); err != nil {
+		fmt.Fprintf(environment.stderr, "warning: could not inspect generated project: %v\n", err)
+	} else {
+		emptyValues = emptyManagedValueGroups(generated, local)
+	}
+	printInitNextSteps(environment.stdout, *configPath, emptyValues)
 	return nil
+}
+
+func emptyManagedValueGroups(cfg config.Config, local appstore.Metadata) map[string][]string {
+	groups := map[string][]string{}
+	collect := func(group string, pointers map[string]*string, values map[string]string) {
+		for field, pointer := range pointers {
+			if pointer != nil && strings.TrimSpace(values[field]) == "" {
+				groups[group] = append(groups[group], field)
+			}
+		}
+	}
+	collect("metadata", cfg.Metadata.Pointers(), local.Values)
+	collect("categories", cfg.Categories.Pointers(), local.Values)
+	collect("age_rating", cfg.AgeRating.Pointers(), local.Values)
+	for deviceFamily, declaration := range cfg.Accessibility {
+		collect("accessibility."+deviceFamily, declaration.Pointers(), local.Accessibility[deviceFamily].Values)
+	}
+	for locale, localization := range cfg.Localizations {
+		values := local.Localizations[locale].Values
+		collect("localizations."+locale+".values", localization.Values.Pointers(), values)
+		for field, path := range localization.Paths() {
+			if path != "" && strings.TrimSpace(values[field]) == "" {
+				groups["files"] = append(groups["files"], path)
+			}
+		}
+	}
+	for group := range groups {
+		sort.Strings(groups[group])
+	}
+	return groups
+}
+
+func printInitNextSteps(writer io.Writer, configPath string, emptyValues map[string][]string) {
+	fmt.Fprintln(writer, "Next steps:")
+	if len(emptyValues) > 0 {
+		fmt.Fprintln(writer, "  1. Fill these empty managed values, or remove optional keys you do not want ascdir to manage:")
+		groups := make([]string, 0, len(emptyValues))
+		for group := range emptyValues {
+			groups = append(groups, group)
+		}
+		sort.Strings(groups)
+		for _, group := range groups {
+			fmt.Fprintf(writer, "     - %s: %s\n", group, strings.Join(emptyValues[group], ", "))
+		}
+	} else {
+		fmt.Fprintf(writer, "  1. Review %s and its referenced text files.\n", configPath)
+	}
+	fmt.Fprintln(writer, "  2. Optionally enable screenshots, App Previews, availability, or pricing in the YAML.")
+	fmt.Fprintf(writer, "  3. Run `ascdir check --config %s`, then `ascdir push --config %s --dry-run`.\n", configPath, configPath)
+	fmt.Fprintln(writer, "Minimal example: https://github.com/Arata1202/ascdir/blob/main/examples/ascdir.minimal.yaml")
 }
 
 func runPull(ctx context.Context, args []string, environment commandEnvironment) error {

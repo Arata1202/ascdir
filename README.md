@@ -151,6 +151,8 @@ project/
 
 `privacy_policy.md` is generated only for `TV_OS`. A custom `license_agreement.md` is present only when the project manages a custom EULA.
 
+After creating the project, `init` groups empty managed values by their YAML or file location and prints the exact `check` and `push --dry-run` commands to run next. The [minimal example](examples/ascdir.minimal.yaml) is a safe starting point. Copy only the fields you want ascdir to manage; omitted fields remain unchanged in App Store Connect.
+
 Edit the YAML or long-form text files, validate them, and preview the remote changes:
 
 ```sh

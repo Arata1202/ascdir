@@ -79,21 +79,6 @@ func (v *AccessibilityValues) SetManaged(field, value string) {
 	}
 }
 
-func accessibilityComments() map[string]string {
-	return map[string]string{
-		"published":                                  "Publish this device-family declaration; publishing cannot be undone",
-		"supports_audio_descriptions":                "The app provides audio descriptions",
-		"supports_captions":                          "The app provides captions",
-		"supports_dark_interface":                    "The app supports a dark interface",
-		"supports_differentiate_without_color_alone": "The app does not rely on color alone",
-		"supports_larger_text":                       "The app supports larger text",
-		"supports_reduced_motion":                    "The app supports reduced motion",
-		"supports_sufficient_contrast":               "The app provides sufficient contrast",
-		"supports_voice_control":                     "The app supports Voice Control",
-		"supports_voiceover":                         "The app supports VoiceOver",
-	}
-}
-
 func SortedAccessibilityDeviceFamilies(values map[string]AccessibilityValues) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {

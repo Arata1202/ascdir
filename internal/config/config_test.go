@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestSaveAndLoad(t *testing.T) {
@@ -25,7 +27,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"version: \"2\"", "# ascdir configuration schema version", "# App bundle identifier", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# App Store display name", "# Required plain-text product description; Markdown is not rendered"} {
+	for _, expected := range []string{"version: \"2\"", "# ascdir configuration schema version", "# App bundle identifier", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# Per-locale storefront text"} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated config is missing %q:\n%s", expected, data)
 		}
@@ -55,7 +57,7 @@ func TestNewIncludesPrivacyPolicyTextOnlyForTVOS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "privacy_policy_text: metadata/en-US/privacy_policy.md # Required plain-text tvOS privacy policy; TV_OS only") {
+	if !strings.Contains(string(data), "privacy_policy_text: metadata/en-US/privacy_policy.md") {
 		t.Fatalf("generated tvOS config lacks the privacy policy explanation:\n%s", data)
 	}
 }
@@ -98,15 +100,48 @@ func TestSaveCommentsOptionalSections(t *testing.T) {
 	for _, expected := range []string{
 		"# Optional plain-text custom EULA; omit this section to leave it unmanaged",
 		"# Managed screenshot root, structured by locale and display type",
+		"# Optional territory availability and preorders",
 		"# Initial setting for territories Apple adds later",
-		"# Whether the app is available in this territory",
+		"# Optional append-only price schedule",
 		"# Three-letter App Store base territory ID",
-		"# App Store Connect price-point ID",
 	} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated optional section comments are missing %q:\n%s", expected, data)
 		}
 	}
+
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	root := document.Content[0]
+	assertCommentPlacement(t, root, "availability", "Optional territory availability and preorders", false)
+	assertCommentPlacement(t, root, "pricing", "Optional append-only price schedule", false)
+	assertCommentPlacement(t, mappingValue(root, "availability"), "available_in_new_territories", "Initial setting for territories Apple adds later", true)
+	assertCommentPlacement(t, mappingValue(root, "pricing"), "base_territory", "Three-letter App Store base territory ID", true)
+}
+
+func assertCommentPlacement(t *testing.T, mapping *yaml.Node, field, comment string, inline bool) {
+	t.Helper()
+	comment = "# " + comment
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		t.Fatalf("mapping for %q is missing", field)
+	}
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		key, value := mapping.Content[index], mapping.Content[index+1]
+		if key.Value != field {
+			continue
+		}
+		if inline {
+			if value.LineComment != comment || key.HeadComment != "" {
+				t.Fatalf("%s comment placement: key head = %q, value line = %q", field, key.HeadComment, value.LineComment)
+			}
+		} else if key.HeadComment != comment || value.LineComment != "" {
+			t.Fatalf("%s comment placement: key head = %q, value line = %q", field, key.HeadComment, value.LineComment)
+		}
+		return
+	}
+	t.Fatalf("field %q is missing", field)
 }
 
 func TestEncodeUpdatedValuesUpdatesPreviewFrameTimes(t *testing.T) {
@@ -262,6 +297,18 @@ localizations:
 	}
 	if got := cfg.Localizations["en-US"].Files.PrivacyPolicyText; got != "metadata/en-US/privacy_policy.md" {
 		t.Fatalf("privacy policy text path = %q", got)
+	}
+}
+
+func TestExamplesLoadAndValidate(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join("..", "..", "examples", "ascdir.minimal.yaml")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("minimal example is invalid: %v", err)
 	}
 }
 

@@ -1,0 +1,26 @@
+# Safe starting point after `ascdir init`. Replace the example values and keep
+# only fields you want ascdir to manage. Omitted optional fields stay unmanaged.
+version: "2"
+
+app:
+  id: "1234567890"
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.2.0
+
+metadata:
+  copyright: "2026 Example, Inc."
+  content_rights_declaration: DOES_NOT_USE_THIRD_PARTY_CONTENT
+
+categories:
+  primary_category: PRODUCTIVITY
+
+localizations:
+  en-US:
+    values:
+      name: Example App
+      keywords: productivity,example
+      support_url: https://example.com/support
+      privacy_policy_url: https://example.com/privacy
+    files:
+      description: metadata/en-US/description.md

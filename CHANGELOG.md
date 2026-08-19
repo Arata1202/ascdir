@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Add a safe minimal configuration example for first-time setup.
+
+### Changed
+
+- Group empty managed fields by location after `init`, reduce repeated generated comments, and guide users through validation and the first dry run.
+
 ## [1.1.2] - 2026-08-19
 
 ### Fixed
