@@ -27,8 +27,10 @@ jobs:
           coverage="$(go tool cover -func=coverage.out | awk '/^total:/ { gsub(/%/, "", $3); print $3 }')"
           awk -v coverage="$coverage" 'BEGIN { if (coverage < 75) { print "coverage below 75%: " coverage "%"; exit 1 } }'
       - run: go vet ./...
-      - name: Validate installer syntax
-        run: sh -n install.sh
+      - name: Validate installer
+        run: |
+          sh -n install.sh
+          sh scripts/test-installer.sh
       - name: Static analysis
         run: go run honnef.co/go/tools/cmd/staticcheck@2026.1 ./...
       - name: Validate GitHub Actions
@@ -68,6 +70,9 @@ jobs:
           ./${{ matrix.binary }} --version
           ./${{ matrix.binary }} help
           ./${{ matrix.binary }} completion ${{ matrix.completion }}
+      - name: Smoke test installer
+        if: runner.os != 'Windows'
+        run: sh scripts/test-installer.sh
       - name: Validate Bash completion
         if: matrix.completion == 'bash'
         run: ./${{ matrix.binary }} completion bash | bash -n
