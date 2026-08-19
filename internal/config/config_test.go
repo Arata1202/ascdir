@@ -25,7 +25,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"version: \"2\"", "# ascdir configuration schema version", "# App bundle identifier", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# Per-locale storefront text; see docs/metadata.md"} {
+	for _, expected := range []string{"version: \"2\"", "# ascdir configuration schema version", "# App bundle identifier", "metadata:", "copyright:", "accessibility_url:", "content_rights_declaration:", "categories:", "primary_category:", "secondary_category:", "values:", "files:", "# Per-locale storefront text"} {
 		if !strings.Contains(string(data), expected) {
 			t.Fatalf("generated config is missing %q:\n%s", expected, data)
 		}
@@ -98,9 +98,9 @@ func TestSaveCommentsOptionalSections(t *testing.T) {
 	for _, expected := range []string{
 		"# Optional plain-text custom EULA; omit this section to leave it unmanaged",
 		"# Managed screenshot root, structured by locale and display type",
-		"# Optional territory availability and preorders; see docs/availability.md",
+		"# Optional territory availability and preorders",
 		"# Initial setting for territories Apple adds later",
-		"# Optional append-only price schedule; see docs/pricing.md",
+		"# Optional append-only price schedule",
 		"# Three-letter App Store base territory ID",
 	} {
 		if !strings.Contains(string(data), expected) {
@@ -267,7 +267,7 @@ localizations:
 
 func TestExamplesLoadAndValidate(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"ascdir.minimal.yaml", "ascdir.reference.yaml"} {
+	for _, name := range []string{"ascdir.minimal.yaml"} {
 		path := filepath.Join("..", "..", "examples", name)
 		cfg, err := Load(path)
 		if err != nil {

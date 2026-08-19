@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- Add separate safe-minimal and exhaustive-reference configurations for first-time setup and advanced options.
+- Add a safe minimal configuration example for first-time setup.
 
 ### Changed
 

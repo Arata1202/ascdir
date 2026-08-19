@@ -392,7 +392,7 @@ func printInitNextSteps(writer io.Writer, configPath string, emptyValues map[str
 	}
 	fmt.Fprintln(writer, "  2. Optionally enable screenshots, App Previews, availability, or pricing in the YAML.")
 	fmt.Fprintf(writer, "  3. Run `ascdir check --config %s`, then `ascdir push --config %s --dry-run`.\n", configPath, configPath)
-	fmt.Fprintln(writer, "Examples: https://github.com/Arata1202/ascdir/tree/main/examples")
+	fmt.Fprintln(writer, "Minimal example: https://github.com/Arata1202/ascdir/blob/main/examples/ascdir.minimal.yaml")
 }
 
 func runPull(ctx context.Context, args []string, environment commandEnvironment) error {

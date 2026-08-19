@@ -276,7 +276,7 @@ func TestRunInitPullAndPush(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Created") {
 		t.Fatalf("output = %q", stdout.String())
 	}
-	for _, expected := range []string{"Next steps:", "empty managed values", "categories:", "localizations.en-US.values:", "files:", "ascdir check --config", "ascdir push --config", "/tree/main/examples"} {
+	for _, expected := range []string{"Next steps:", "empty managed values", "categories:", "localizations.en-US.values:", "files:", "ascdir check --config", "ascdir push --config", "/blob/main/examples/ascdir.minimal.yaml"} {
 		if !strings.Contains(stdout.String(), expected) {
 			t.Fatalf("init output is missing %q: %q", expected, stdout.String())
 		}

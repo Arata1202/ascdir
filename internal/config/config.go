@@ -568,11 +568,11 @@ func addSchemaComments(document *yaml.Node) {
 	}
 	addMappingComments(root, map[string]string{
 		"version":       "ascdir configuration schema version",
-		"localizations": "Per-locale storefront text; see docs/metadata.md",
-		"age_rating":    "Managed age-rating declaration; see docs/age-rating.md",
-		"accessibility": "Optional Accessibility Nutrition Labels; see docs/accessibility.md",
-		"availability":  "Optional territory availability and preorders; see docs/availability.md",
-		"pricing":       "Optional append-only price schedule; see docs/pricing.md",
+		"localizations": "Per-locale storefront text",
+		"age_rating":    "Managed age-rating declaration",
+		"accessibility": "Optional Accessibility Nutrition Labels",
+		"availability":  "Optional territory availability and preorders",
+		"pricing":       "Optional append-only price schedule",
 	})
 	addMappingComments(mappingValue(root, "app"), map[string]string{
 		"id":        "App Store Connect app ID; populated by init",
@@ -619,8 +619,13 @@ func addMappingComments(mapping *yaml.Node, comments map[string]string) {
 		return
 	}
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
-		key := mapping.Content[index]
-		key.HeadComment = comments[key.Value]
+		key, value := mapping.Content[index], mapping.Content[index+1]
+		comment := comments[key.Value]
+		if value.Kind == yaml.ScalarNode {
+			value.LineComment = comment
+		} else {
+			key.HeadComment = comment
+		}
 	}
 }
 
