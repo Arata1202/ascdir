@@ -68,6 +68,8 @@ func TestApplyMetadataCreatesLocalizationBeforeUploadingFileAsset(t *testing.T) 
 			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appScreenshots/shot-new":
 			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/appScreenshots/shot-new":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": resourceJSON("shot-new", "appScreenshots", map[string]any{"assetDeliveryState": map[string]any{"state": "COMPLETE"}})})
 		case r.Method == http.MethodPatch && r.URL.Path == "/v1/appScreenshotSets/set-new/relationships/appScreenshots":
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -88,7 +90,8 @@ func TestApplyMetadataCreatesLocalizationBeforeUploadingFileAsset(t *testing.T) 
 	want := []string{
 		"POST /v1/appInfoLocalizations", "POST /v1/appStoreVersionLocalizations",
 		"POST /v1/appScreenshotSets", "POST /v1/appScreenshots", "PUT /upload",
-		"PATCH /v1/appScreenshots/shot-new", "PATCH /v1/appScreenshotSets/set-new/relationships/appScreenshots",
+		"PATCH /v1/appScreenshots/shot-new", "GET /v1/appScreenshots/shot-new",
+		"PATCH /v1/appScreenshotSets/set-new/relationships/appScreenshots",
 	}
 	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("calls = %#v, want %#v", calls, want)

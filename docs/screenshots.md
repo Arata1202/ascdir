@@ -30,6 +30,10 @@ When stale local screenshots would be removed, `pull` stops until the plan has
 been reviewed with `pull --dry-run` and explicitly confirmed with
 `--allow-local-asset-deletions`.
 
+After commit, ascdir waits for Apple's asynchronous `assetDeliveryState` to
+become `COMPLETE`. A failed delivery stops the push before the new ordering is
+applied or an existing screenshot is removed.
+
 Replacing or deleting a remote image requires both a dry-run review and the
 explicit `--allow-asset-deletions` option:
 

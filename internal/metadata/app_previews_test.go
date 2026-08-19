@@ -16,10 +16,10 @@ func TestReadAndDiffLocalAppPreviews(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "01.mp4"), []byte("video one"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "01.mp4"), testISOBaseMedia("isom"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "02.mov"), []byte("video two"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "02.mov"), testISOBaseMedia("qt  "), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
@@ -53,6 +53,10 @@ func TestReadAndDiffLocalAppPreviews(t *testing.T) {
 	}
 }
 
+func testISOBaseMedia(brand string) []byte {
+	return append([]byte{0, 0, 0, 16, 'f', 't', 'y', 'p'}, append([]byte(brand), 0, 0, 0, 0)...)
+}
+
 func TestReadLocalAppPreviewsRejectsUnsupportedFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -78,6 +82,40 @@ func TestPreviewAssetsEqual(t *testing.T) {
 	}
 	if previewAssetsEqual([]appstore.Asset{asset}, nil) {
 		t.Fatal("different preview asset counts compare equal")
+	}
+}
+
+func TestAppPreviewRenameIsAChange(t *testing.T) {
+	t.Parallel()
+	before := []appstore.Asset{{FileName: "old.mp4", Checksum: "same"}}
+	after := []appstore.Asset{{FileName: "new.mp4", Checksum: "same"}}
+	if previewAssetsEqual(before, after) {
+		t.Fatal("rename compared equal")
+	}
+}
+
+func TestReadLocalAppPreviewsRejectsInvalidMediaAndUnknownFrameKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	root := filepath.Join(dir, "assets", "app-previews", "en-US", "IPHONE_67")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "01.mp4")
+	if err := os.WriteFile(path, []byte("not a video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.AppPreviews = "assets/app-previews"
+	if _, err := readLocalAppPreviews(cfg, dir, false); err == nil {
+		t.Fatal("non-video MP4 was accepted")
+	}
+	if err := os.WriteFile(path, testISOBaseMedia("isom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Assets.PreviewFrameTimes = map[string]string{"en-US/IPHONE_67/missing.mp4": "00:00:05"}
+	if _, err := readLocalAppPreviews(cfg, dir, false); err == nil {
+		t.Fatal("unknown preview frame key was accepted")
 	}
 }
 

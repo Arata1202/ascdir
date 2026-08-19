@@ -115,7 +115,7 @@ export ASC_PRIVATE_KEY_PATH="$HOME/.private_keys/AuthKey_ABC123DEFG.p8"
 
 Never commit the private key. `ascdir` ignores `*.p8` and `.env` by default, but credentials should still be stored outside the repository or in a CI secret store.
 
-The HTTP timeout defaults to 30 seconds. Set `ASCDIR_TIMEOUT` to a positive Go duration such as `45s` when needed.
+The HTTP timeout defaults to 10 minutes so large App Preview transfers can complete on slower connections. Set `ASCDIR_TIMEOUT` to a positive Go duration such as `15m` when needed.
 
 Remove locally stored credentials without deleting the `.p8` private key:
 

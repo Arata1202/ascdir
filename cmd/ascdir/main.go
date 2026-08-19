@@ -613,11 +613,11 @@ func newClient(stderr io.Writer) (*appstore.Client, error) {
 	if warning := appstore.PrivateKeyPermissionWarning(keyPath); warning != "" {
 		fmt.Fprintln(stderr, "warning:", warning)
 	}
-	timeout := 30 * time.Second
+	timeout := 10 * time.Minute
 	if value := os.Getenv("ASCDIR_TIMEOUT"); value != "" {
 		parsed, err := time.ParseDuration(value)
 		if err != nil || parsed <= 0 {
-			return nil, fmt.Errorf("ASCDIR_TIMEOUT must be a positive duration such as 30s")
+			return nil, fmt.Errorf("ASCDIR_TIMEOUT must be a positive duration such as 10m")
 		}
 		timeout = parsed
 	}
