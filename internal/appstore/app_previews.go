@@ -15,7 +15,15 @@ import (
 
 const maximumAppPreviewDownloadSize = 1 << 30
 
-func (c *Client) fetchAppPreviews(ctx context.Context, result *Metadata, download bool) error {
+func (c *Client) fetchAppPreviews(ctx context.Context, result *Metadata, download bool) (err error) {
+	var downloaded []string
+	defer func() {
+		if err != nil {
+			for _, path := range downloaded {
+				_ = os.Remove(path)
+			}
+		}
+	}()
 	for locale, localization := range result.Localizations {
 		if localization.VersionLocalizationID == "" {
 			continue
@@ -50,6 +58,7 @@ func (c *Client) fetchAppPreviews(ctx context.Context, result *Metadata, downloa
 					if err != nil {
 						return fmt.Errorf("download app preview %s/%s/%s: %w", locale, previewType, asset.FileName, err)
 					}
+					downloaded = append(downloaded, asset.Path)
 				}
 				assets = append(assets, asset)
 			}
@@ -226,11 +235,7 @@ func (c *Client) uploadAppPreview(ctx context.Context, setID string, asset Asset
 }
 
 func (c *Client) downloadAssetToFile(ctx context.Context, assetURL string) (_ string, _ int64, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
-	if err != nil {
-		return "", 0, err
-	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.getAsset(ctx, assetURL)
 	if err != nil {
 		return "", 0, err
 	}
@@ -257,6 +262,42 @@ func (c *Client) downloadAssetToFile(ctx context.Context, assetURL string) (_ st
 		return "", 0, err
 	}
 	return path, written, nil
+}
+
+func validateAssetDownloadURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return fmt.Errorf("parse asset URL: %w", err)
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return errors.New("asset download URL must use HTTPS")
+	}
+	return nil
+}
+
+func (c *Client) getAsset(ctx context.Context, assetURL string) (*http.Response, error) {
+	if err := validateAssetDownloadURL(assetURL); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	client := *c.httpClient
+	previousCheckRedirect := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := validateAssetDownloadURL(req.URL.String()); err != nil {
+			return err
+		}
+		if previousCheckRedirect != nil {
+			return previousCheckRedirect(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return client.Do(req)
 }
 
 func copyWithLimit(destination io.Writer, source io.Reader, maximum int64) (int64, error) {

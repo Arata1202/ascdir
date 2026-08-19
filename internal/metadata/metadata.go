@@ -1,6 +1,8 @@
 package metadata
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -15,9 +17,22 @@ import (
 	"github.com/Arata1202/ascdir/internal/appstore"
 	"github.com/Arata1202/ascdir/internal/atomicfile"
 	"github.com/Arata1202/ascdir/internal/config"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) {
+	return readLocal(cfg, configPath, false)
+}
+
+// ReadLocalForPull permits an absent managed asset root so a fresh checkout can
+// bootstrap it from App Store Connect. Push and check remain strict so a typo
+// or omitted checkout cannot be interpreted as an intentional empty set.
+func ReadLocalForPull(cfg config.Config, configPath string) (appstore.Metadata, error) {
+	return readLocal(cfg, configPath, true)
+}
+
+func readLocal(cfg config.Config, configPath string, allowMissingAssets bool) (appstore.Metadata, error) {
 	result := appstore.Metadata{AppID: cfg.App.ID, Values: cfg.Metadata.Map(), Accessibility: map[string]appstore.AccessibilityDeclaration{}, Screenshots: map[string]map[string][]appstore.Asset{}, ScreenshotSetIDs: map[string]map[string]string{}, AppPreviews: map[string]map[string][]appstore.Asset{}, AppPreviewSetIDs: map[string]map[string]string{}, Localizations: map[string]appstore.Localization{}}
 	for field, value := range cfg.Categories.Map() {
 		result.Values[field] = value
@@ -51,14 +66,17 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 		if err != nil {
 			return appstore.Metadata{}, fmt.Errorf("read license_agreement.file: %w", err)
 		}
+		if !utf8.Valid(data) {
+			return appstore.Metadata{}, errors.New("license_agreement.file must contain valid UTF-8")
+		}
 		result.Values["license_agreement_text"] = strings.TrimSuffix(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 	}
-	screenshots, err := readLocalScreenshots(cfg, base)
+	screenshots, err := readLocalScreenshots(cfg, base, allowMissingAssets)
 	if err != nil {
 		return appstore.Metadata{}, err
 	}
 	result.Screenshots = screenshots
-	previews, err := readLocalAppPreviews(cfg, base)
+	previews, err := readLocalAppPreviews(cfg, base, allowMissingAssets)
 	if err != nil {
 		return appstore.Metadata{}, err
 	}
@@ -80,6 +98,9 @@ func ReadLocal(cfg config.Config, configPath string) (appstore.Metadata, error) 
 			if err != nil {
 				return appstore.Metadata{}, fmt.Errorf("read %s.%s: %w", locale, field, err)
 			}
+			if !utf8.Valid(data) {
+				return appstore.Metadata{}, fmt.Errorf("%s.%s must contain valid UTF-8", locale, field)
+			}
 			values[field] = strings.TrimSuffix(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 		}
 		result.Localizations[locale] = appstore.Localization{Values: values}
@@ -98,17 +119,53 @@ func WriteLocalNew(cfg config.Config, configPath string, remote appstore.Metadat
 	return writeLocal(cfg, configPath, remote, true)
 }
 
+// CleanupDownloadedAssets releases temporary files returned by the App Store
+// client when a pull exits before WriteLocal takes ownership of them.
+func CleanupDownloadedAssets(remote appstore.Metadata) {
+	for _, localizations := range remote.AppPreviews {
+		for _, assets := range localizations {
+			for _, asset := range assets {
+				if asset.Path != "" {
+					_ = os.Remove(asset.Path)
+				}
+			}
+		}
+	}
+}
+
+func ChangesDeleteAssets(changes []appstore.Change) bool {
+	for _, change := range changes {
+		if change.AssetSet != nil && AssetSetDeletesRemoteFiles(*change.AssetSet) {
+			return true
+		}
+	}
+	return false
+}
+
 func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, replaceConfig bool) error {
+	defer CleanupDownloadedAssets(remote)
 	base := filepath.Dir(filepath.Clean(configPath))
+	if replaceConfig {
+		if err := os.MkdirAll(base, 0o755); err != nil {
+			return fmt.Errorf("create configuration directory: %w", err)
+		}
+	}
+	canonicalBase, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return fmt.Errorf("resolve configuration directory: %w", err)
+	}
 	type writeOperation struct {
-		locale string
-		field  string
-		path   string
-		data   []byte
-		source string
+		locale   string
+		field    string
+		path     string
+		data     []byte
+		source   string
+		checksum string
 	}
 	var operations []writeOperation
-	resolvedPaths := map[string]string{}
+	configDestination := filepath.Join(canonicalBase, filepath.Base(filepath.Clean(configPath)))
+	resolvedPaths := map[string]string{configDestination: "configuration"}
+	foldedPaths := map[string]string{portablePathKey(configDestination): "configuration"}
 	if cfg.LicenseAgreement != nil {
 		fullPath, err := prepareManagedPath(base, cfg.LicenseAgreement.File)
 		if err != nil {
@@ -118,7 +175,14 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		if value != "" {
 			value += "\n"
 		}
+		if previous, ok := resolvedPaths[fullPath]; ok {
+			return fmt.Errorf("license_agreement.file resolves to the same file as %s", previous)
+		}
+		if previous, ok := foldedPaths[portablePathKey(fullPath)]; ok {
+			return fmt.Errorf("license_agreement.file has a cross-platform file name collision with %s", previous)
+		}
 		resolvedPaths[fullPath] = "license_agreement.file"
+		foldedPaths[portablePathKey(fullPath)] = "license_agreement.file"
 		operations = append(operations, writeOperation{field: "license_agreement", path: fullPath, data: []byte(value)})
 	}
 	var staleScreenshots []string
@@ -131,8 +195,20 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		root = filepath.Dir(root)
 		wanted := map[string]bool{}
 		for locale, sets := range remote.Screenshots {
+			if _, configured := cfg.Localizations[locale]; !configured {
+				continue
+			}
+			if err := validateRemotePathComponent("screenshot locale", locale); err != nil {
+				return err
+			}
 			for displayType, assets := range sets {
+				if err := validateRemotePathComponent("screenshot display type", displayType); err != nil {
+					return err
+				}
 				for _, asset := range assets {
+					if err := validateRemotePathComponent("screenshot file name", asset.FileName); err != nil {
+						return err
+					}
 					if len(asset.Content) == 0 && asset.Path == "" {
 						return fmt.Errorf("screenshot %s/%s/%s was not downloaded", locale, displayType, asset.FileName)
 					}
@@ -141,11 +217,16 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 					if err != nil {
 						return fmt.Errorf("resolve screenshot %s: %w", relative, err)
 					}
-					wanted[fullPath] = true
-					operations = append(operations, writeOperation{field: "screenshot", path: fullPath, data: asset.Content, source: asset.Path})
-					if asset.Path != "" {
-						defer os.Remove(asset.Path)
+					if previous, ok := resolvedPaths[fullPath]; ok {
+						return fmt.Errorf("screenshot %s resolves to the same file as %s", relative, previous)
 					}
+					if previous, ok := foldedPaths[portablePathKey(fullPath)]; ok {
+						return fmt.Errorf("screenshot %s has a cross-platform file name collision with %s", relative, previous)
+					}
+					resolvedPaths[fullPath] = "screenshot " + relative
+					foldedPaths[portablePathKey(fullPath)] = "screenshot " + relative
+					wanted[fullPath] = true
+					operations = append(operations, writeOperation{field: "screenshot", path: fullPath, data: asset.Content, source: asset.Path, checksum: asset.Checksum})
 				}
 			}
 		}
@@ -173,8 +254,20 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		root = filepath.Dir(root)
 		wanted := map[string]bool{}
 		for locale, sets := range remote.AppPreviews {
+			if _, configured := cfg.Localizations[locale]; !configured {
+				continue
+			}
+			if err := validateRemotePathComponent("app preview locale", locale); err != nil {
+				return err
+			}
 			for previewType, assets := range sets {
+				if err := validateRemotePathComponent("app preview type", previewType); err != nil {
+					return err
+				}
 				for _, asset := range assets {
+					if err := validateRemotePathComponent("app preview file name", asset.FileName); err != nil {
+						return err
+					}
 					if len(asset.Content) == 0 && asset.Path == "" {
 						return fmt.Errorf("app preview %s/%s/%s was not downloaded", locale, previewType, asset.FileName)
 					}
@@ -183,11 +276,16 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 					if err != nil {
 						return fmt.Errorf("resolve app preview %s: %w", relative, err)
 					}
-					wanted[fullPath] = true
-					operations = append(operations, writeOperation{field: "app_preview", path: fullPath, data: asset.Content, source: asset.Path})
-					if asset.Path != "" {
-						defer os.Remove(asset.Path)
+					if previous, ok := resolvedPaths[fullPath]; ok {
+						return fmt.Errorf("app preview %s resolves to the same file as %s", relative, previous)
 					}
+					if previous, ok := foldedPaths[portablePathKey(fullPath)]; ok {
+						return fmt.Errorf("app preview %s has a cross-platform file name collision with %s", relative, previous)
+					}
+					resolvedPaths[fullPath] = "app preview " + relative
+					foldedPaths[portablePathKey(fullPath)] = "app preview " + relative
+					wanted[fullPath] = true
+					operations = append(operations, writeOperation{field: "app_preview", path: fullPath, data: asset.Content, source: asset.Path, checksum: asset.Checksum})
 				}
 			}
 		}
@@ -227,7 +325,11 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 			if previous, ok := resolvedPaths[fullPath]; ok {
 				return fmt.Errorf("%s.%s resolves to the same metadata file as %s", locale, field, previous)
 			}
+			if previous, ok := foldedPaths[portablePathKey(fullPath)]; ok {
+				return fmt.Errorf("%s.%s has a cross-platform file name collision with %s", locale, field, previous)
+			}
 			resolvedPaths[fullPath] = locale + "." + field
+			foldedPaths[portablePathKey(fullPath)] = locale + "." + field
 			operations = append(operations, writeOperation{locale: locale, field: field, path: fullPath, data: []byte(value)})
 		}
 	}
@@ -236,6 +338,9 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		if cfg.Assets.AppPreviews != "" {
 			updated.Assets.PreviewFrameTimes = map[string]string{}
 			for locale, sets := range remote.AppPreviews {
+				if _, configured := cfg.Localizations[locale]; !configured {
+					continue
+				}
 				for previewType, assets := range sets {
 					for _, asset := range assets {
 						if asset.PreviewFrameTimeCode != "" {
@@ -309,7 +414,7 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		if err != nil {
 			return fmt.Errorf("encode configuration: %w", err)
 		}
-		operations = append(operations, writeOperation{field: "configuration", path: filepath.Clean(configPath), data: data})
+		operations = append(operations, writeOperation{field: "configuration", path: configDestination, data: data})
 	}
 	// Resolve, validate, and fully stage every destination before replacing any
 	// files. This prevents configuration, permission, and write errors from
@@ -324,13 +429,22 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		var file *atomicfile.Pending
 		var err error
 		if operation.source == "" {
+			if err := verifyDownloadedChecksum(operation.data, operation.checksum); err != nil {
+				return fmt.Errorf("write %s: %w", operation.field, err)
+			}
 			file, err = atomicfile.Prepare(operation.path, operation.data, 0o644)
 		} else {
 			source, openErr := os.Open(operation.source)
 			if openErr != nil {
 				err = openErr
 			} else {
-				file, err = atomicfile.PrepareReader(operation.path, source, 0o644)
+				if checksumErr := verifyReaderChecksum(source, operation.checksum); checksumErr != nil {
+					err = checksumErr
+				} else if _, seekErr := source.Seek(0, io.SeekStart); seekErr != nil {
+					err = seekErr
+				} else {
+					file, err = atomicfile.PrepareReader(operation.path, source, 0o644)
+				}
 				closeErr := source.Close()
 				if err == nil {
 					err = closeErr
@@ -345,26 +459,156 @@ func writeLocal(cfg config.Config, configPath string, remote appstore.Metadata, 
 		}
 		pending = append(pending, file)
 	}
-	for index, file := range pending {
-		if err := file.Commit(); err != nil {
-			operation := operations[index]
+	destinations := make([]string, len(operations))
+	for index := range operations {
+		destinations[index] = operations[index].path
+	}
+	failedIndex, err := commitFileTransaction(pending, destinations, append(staleScreenshots, staleAppPreviews...))
+	if err != nil {
+		if failedIndex >= 0 && failedIndex < len(operations) {
+			operation := operations[failedIndex]
 			if operation.locale == "" {
 				return fmt.Errorf("write %s: %w", operation.field, err)
 			}
 			return fmt.Errorf("write %s.%s: %w", operation.locale, operation.field, err)
 		}
-	}
-	for _, path := range staleScreenshots {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove stale screenshot %s: %w", path, err)
-		}
-	}
-	for _, path := range staleAppPreviews {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove stale app preview %s: %w", path, err)
-		}
+		return fmt.Errorf("commit local file transaction: %w", err)
 	}
 	return nil
+}
+
+type fileBackup struct {
+	destination string
+	backup      string
+	existed     bool
+}
+
+func commitFileTransaction(pending []*atomicfile.Pending, destinations, stale []string) (int, error) {
+	return commitFileTransactionWithOps(pending, destinations, stale, transactionFileOps{remove: os.Remove, rename: os.Rename})
+}
+
+type transactionFileOps struct {
+	remove func(string) error
+	rename func(string, string) error
+}
+
+func commitFileTransactionWithOps(pending []*atomicfile.Pending, destinations, stale []string, ops transactionFileOps) (int, error) {
+	if len(pending) != len(destinations) {
+		return -1, errors.New("internal error: staged file and destination counts differ")
+	}
+	backups := make([]fileBackup, 0, len(destinations)+len(stale))
+	rollback := func() error {
+		var rollbackErr error
+		for index := len(backups) - 1; index >= 0; index-- {
+			backup := backups[index]
+			if err := ops.remove(backup.destination); err != nil && !errors.Is(err, os.ErrNotExist) {
+				rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove partially committed %s: %w", backup.destination, err))
+				continue
+			}
+			if backup.existed {
+				if err := ops.rename(backup.backup, backup.destination); err != nil {
+					rollbackErr = errors.Join(rollbackErr, fmt.Errorf("restore %s from backup %s: %w", backup.destination, backup.backup, err))
+				}
+			}
+		}
+		return rollbackErr
+	}
+	for index, destination := range destinations {
+		backup, err := moveToBackup(destination, ops)
+		if err != nil {
+			return index, errors.Join(err, rollback())
+		}
+		backups = append(backups, backup)
+		if err := pending[index].Commit(); err != nil {
+			return index, errors.Join(err, rollback())
+		}
+	}
+	for _, destination := range stale {
+		backup, err := moveToBackup(destination, ops)
+		if err != nil {
+			return len(destinations), errors.Join(err, rollback())
+		}
+		backups = append(backups, backup)
+	}
+	for _, backup := range backups {
+		if backup.existed {
+			if err := ops.remove(backup.backup); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return -1, fmt.Errorf("remove committed transaction backup %s: %w", backup.backup, err)
+			}
+		}
+	}
+	return -1, nil
+}
+
+func moveToBackup(destination string, ops transactionFileOps) (fileBackup, error) {
+	backup := fileBackup{destination: destination}
+	info, err := os.Lstat(destination)
+	if errors.Is(err, os.ErrNotExist) {
+		return backup, nil
+	} else if err != nil {
+		return backup, err
+	}
+	if !info.Mode().IsRegular() {
+		return backup, fmt.Errorf("destination %s is not a regular file", destination)
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(destination), ".ascdir-backup-*")
+	if err != nil {
+		return backup, err
+	}
+	backup.backup = temporary.Name()
+	if err := temporary.Close(); err != nil {
+		_ = ops.remove(backup.backup)
+		return fileBackup{}, err
+	}
+	if err := ops.remove(backup.backup); err != nil {
+		return fileBackup{}, err
+	}
+	if err := ops.rename(destination, backup.backup); err != nil {
+		return fileBackup{}, err
+	}
+	backup.existed = true
+	return backup, nil
+}
+
+func verifyDownloadedChecksum(data []byte, expected string) error {
+	if expected == "" {
+		return nil
+	}
+	sum := md5.Sum(data)
+	if !strings.EqualFold(hex.EncodeToString(sum[:]), expected) {
+		return errors.New("downloaded asset checksum does not match App Store Connect")
+	}
+	return nil
+}
+
+func verifyReaderChecksum(reader io.Reader, expected string) error {
+	if expected == "" {
+		return nil
+	}
+	hash := md5.New()
+	if _, err := io.Copy(hash, reader); err != nil {
+		return err
+	}
+	if !strings.EqualFold(hex.EncodeToString(hash.Sum(nil)), expected) {
+		return errors.New("downloaded asset checksum does not match App Store Connect")
+	}
+	return nil
+}
+
+func validateRemotePathComponent(kind, value string) error {
+	if value == "" || value == "." || value == ".." || filepath.Base(value) != value || strings.ContainsAny(value, `<>:"/\\|?*`) || strings.TrimRight(value, " .") != value || strings.IndexFunc(value, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		return fmt.Errorf("%s %q is not a safe file name component", kind, value)
+	}
+	name := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
+	reserved := map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true, "COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true, "COM6": true, "COM7": true, "COM8": true, "COM9": true, "LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true, "LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true}
+	if reserved[name] {
+		return fmt.Errorf("%s %q is reserved on Windows", kind, value)
+	}
+	return nil
+}
+
+func portablePathKey(path string) string {
+	return cases.Fold().String(norm.NFC.String(filepath.ToSlash(filepath.Clean(path))))
 }
 
 func prepareManagedPath(base, relative string) (string, error) {

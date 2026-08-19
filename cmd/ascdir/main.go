@@ -399,6 +399,7 @@ func runPull(ctx context.Context, args []string, environment commandEnvironment)
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
 	configPath := fs.String("config", "ascdir.yaml", "configuration file")
 	dryRun := fs.Bool("dry-run", false, "show changes without overwriting local metadata")
+	allowLocalAssetDeletions := fs.Bool("allow-local-asset-deletions", false, "allow pull to delete local assets absent from App Store Connect")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -419,8 +420,14 @@ func runPull(ctx context.Context, args []string, environment commandEnvironment)
 	if err != nil {
 		return err
 	}
+	pullOwnsDownloads := true
+	defer func() {
+		if pullOwnsDownloads {
+			metadata.CleanupDownloadedAssets(remote)
+		}
+	}()
 	if *dryRun {
-		local, err := metadata.ReadLocal(cfg, *configPath)
+		local, err := metadata.ReadLocalForPull(cfg, *configPath)
 		if err != nil {
 			return err
 		}
@@ -433,6 +440,15 @@ func runPull(ctx context.Context, args []string, environment commandEnvironment)
 		fmt.Fprintf(environment.stdout, "Dry run: %d local change(s) not written.\n", len(changes))
 		return nil
 	}
+	local, err := metadata.ReadLocalForPull(cfg, *configPath)
+	if err != nil {
+		return err
+	}
+	pullChanges := metadata.Diff(metadata.Select(cfg, remote), local)
+	if metadata.ChangesDeleteAssets(pullChanges) && !*allowLocalAssetDeletions {
+		return errors.New("pull would delete local assets; review with --dry-run and rerun with --allow-local-asset-deletions")
+	}
+	pullOwnsDownloads = false // WriteLocal takes ownership, including error cleanup.
 	if err := metadata.WriteLocal(cfg, *configPath, remote); err != nil {
 		return err
 	}

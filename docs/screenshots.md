@@ -26,6 +26,10 @@ inside the managed directory. `push` compares source checksums, uploads new
 files in the chunks requested by App Store Connect, commits each upload, and
 then updates the display order. Existing matching assets are reused.
 
+When stale local screenshots would be removed, `pull` stops until the plan has
+been reviewed with `pull --dry-run` and explicitly confirmed with
+`--allow-local-asset-deletions`.
+
 Replacing or deleting a remote image requires both a dry-run review and the
 explicit `--allow-asset-deletions` option:
 

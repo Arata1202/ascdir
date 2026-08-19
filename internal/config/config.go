@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/Arata1202/ascdir/internal/atomicfile"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 	"gopkg.in/yaml.v3"
 )
 
@@ -528,14 +530,93 @@ func replaceMappingValue(mapping *yaml.Node, key string, value any) error {
 	}
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
 		if mapping.Content[index].Value == key {
-			node.HeadComment = mapping.Content[index+1].HeadComment
-			node.LineComment = mapping.Content[index+1].LineComment
+			preserveNodeComments(mapping.Content[index+1], node)
 			mapping.Content[index+1] = node
 			return nil
 		}
 	}
 	mapping.Content = append(mapping.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, node)
 	return nil
+}
+
+func preserveNodeComments(previous, updated *yaml.Node) {
+	updated.HeadComment = previous.HeadComment
+	updated.LineComment = previous.LineComment
+	updated.FootComment = previous.FootComment
+	if previous.Kind != updated.Kind {
+		return
+	}
+	switch updated.Kind {
+	case yaml.MappingNode:
+		previousValues := map[string]*yaml.Node{}
+		previousKeys := map[string]*yaml.Node{}
+		for index := 0; index+1 < len(previous.Content); index += 2 {
+			previousKeys[previous.Content[index].Value] = previous.Content[index]
+			previousValues[previous.Content[index].Value] = previous.Content[index+1]
+		}
+		for index := 0; index+1 < len(updated.Content); index += 2 {
+			key := updated.Content[index].Value
+			if previousKey := previousKeys[key]; previousKey != nil {
+				preserveNodeComments(previousKey, updated.Content[index])
+			}
+			if previousValue := previousValues[key]; previousValue != nil {
+				preserveNodeComments(previousValue, updated.Content[index+1])
+			}
+		}
+	case yaml.SequenceNode:
+		previousByValue := map[string][]*yaml.Node{}
+		matchedPrevious := map[*yaml.Node]bool{}
+		matchedUpdated := map[*yaml.Node]bool{}
+		for _, child := range previous.Content {
+			key := nodeSemanticKey(child)
+			previousByValue[key] = append(previousByValue[key], child)
+		}
+		for _, child := range updated.Content {
+			key := nodeSemanticKey(child)
+			matches := previousByValue[key]
+			if key == "" || len(matches) == 0 {
+				continue
+			}
+			preserveNodeComments(matches[0], child)
+			matchedPrevious[matches[0]] = true
+			matchedUpdated[child] = true
+			previousByValue[key] = matches[1:]
+		}
+		var unmatchedPrevious, unmatchedUpdated []*yaml.Node
+		for _, child := range previous.Content {
+			if !matchedPrevious[child] {
+				unmatchedPrevious = append(unmatchedPrevious, child)
+			}
+		}
+		for _, child := range updated.Content {
+			if !matchedUpdated[child] {
+				unmatchedUpdated = append(unmatchedUpdated, child)
+			}
+		}
+		if len(unmatchedPrevious) == 1 && len(unmatchedUpdated) == 1 {
+			preserveNodeComments(unmatchedPrevious[0], unmatchedUpdated[0])
+		}
+	}
+}
+
+func nodeSemanticKey(node *yaml.Node) string {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		return node.Tag + ":" + node.Value
+	case yaml.MappingNode:
+		parts := make([]string, 0, len(node.Content)/2)
+		for index := 0; index+1 < len(node.Content); index += 2 {
+			value := nodeSemanticKey(node.Content[index+1])
+			if value == "" {
+				return ""
+			}
+			parts = append(parts, node.Content[index].Value+"="+value)
+		}
+		sort.Strings(parts)
+		return "map:" + strings.Join(parts, "|")
+	default:
+		return ""
+	}
 }
 
 func updateScalarMapping(mapping *yaml.Node, label string, values map[string]*string) error {
@@ -717,16 +798,18 @@ func (c Config) Validate() error {
 		}
 	}
 	seen := map[string]string{}
+	portableSeen := map[string]string{}
 	if c.LicenseAgreement != nil {
 		path := strings.TrimSpace(c.LicenseAgreement.File)
 		if path == "" {
 			return errors.New("license_agreement.file is required")
 		}
 		clean := filepath.Clean(path)
-		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || !portableRelativePath(path) {
 			return errors.New("license_agreement.file must be a relative path inside the project")
 		}
 		seen[clean] = "license_agreement.file"
+		portableSeen[portableConfigPathKey(clean)] = "license_agreement.file"
 		territories := map[string]bool{}
 		for _, territory := range c.LicenseAgreement.Territories {
 			if len(territory) != 3 || territory != strings.ToUpper(territory) {
@@ -740,23 +823,30 @@ func (c Config) Validate() error {
 	}
 	if c.Assets.Screenshots != "" {
 		clean := filepath.Clean(c.Assets.Screenshots)
-		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || !portableRelativePath(c.Assets.Screenshots) {
 			return errors.New("assets.screenshots must be a relative directory inside the project")
 		}
 	}
 	if c.Assets.AppPreviews != "" {
 		clean := filepath.Clean(c.Assets.AppPreviews)
-		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || !portableRelativePath(c.Assets.AppPreviews) {
 			return errors.New("assets.app_previews must be a relative directory inside the project")
 		}
 		for path := range c.Assets.PreviewFrameTimes {
 			clean := filepath.Clean(path)
-			if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || !portableRelativePath(path) {
 				return fmt.Errorf("assets.preview_frame_times key %q must be relative to assets.app_previews", path)
 			}
 		}
 	} else if len(c.Assets.PreviewFrameTimes) > 0 {
 		return errors.New("assets.preview_frame_times requires assets.app_previews")
+	}
+	if c.Assets.Screenshots != "" && c.Assets.AppPreviews != "" {
+		screenshots := filepath.Clean(c.Assets.Screenshots)
+		previews := filepath.Clean(c.Assets.AppPreviews)
+		if pathsOverlap(screenshots, previews) || portablePathsOverlap(screenshots, previews) {
+			return errors.New("assets.screenshots and assets.app_previews must be separate, non-nested directories")
+		}
 	}
 	for _, locale := range SortedLocales(c.Localizations) {
 		localization := c.Localizations[locale]
@@ -777,19 +867,58 @@ func (c Config) Validate() error {
 			}
 			managedFields++
 			clean := filepath.Clean(path)
-			if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || !portableRelativePath(path) {
 				return fmt.Errorf("%s.%s must be a relative path inside the project", locale, field)
 			}
 			if previous, ok := seen[clean]; ok {
 				return fmt.Errorf("%s.%s reuses path %q from %s", locale, field, path, previous)
 			}
+			portableKey := portableConfigPathKey(clean)
+			if previous, ok := portableSeen[portableKey]; ok {
+				return fmt.Errorf("%s.%s path %q collides with %s on a supported filesystem", locale, field, path, previous)
+			}
 			seen[clean] = locale + "." + field
+			portableSeen[portableKey] = locale + "." + field
 		}
 		if managedFields == 0 {
 			return fmt.Errorf("%s must manage at least one field", locale)
 		}
 	}
+	for path, owner := range seen {
+		for assetOwner, root := range map[string]string{"assets.screenshots": c.Assets.Screenshots, "assets.app_previews": c.Assets.AppPreviews} {
+			if root != "" && (pathWithin(filepath.Clean(root), filepath.Clean(path)) || portablePathWithin(root, path)) {
+				return fmt.Errorf("%s path %q must not be inside %s", owner, path, assetOwner)
+			}
+		}
+	}
 	return nil
+}
+
+func pathsOverlap(first, second string) bool {
+	return pathWithin(first, second) || pathWithin(second, first)
+}
+
+func pathWithin(root, candidate string) bool {
+	relative, err := filepath.Rel(root, candidate)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+func portableRelativePath(path string) bool {
+	return path != "" && !strings.ContainsAny(path, `\\:`) && strings.IndexFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) < 0
+}
+
+func portableConfigPathKey(path string) string {
+	return cases.Fold().String(norm.NFC.String(filepath.ToSlash(filepath.Clean(path))))
+}
+
+func portablePathsOverlap(first, second string) bool {
+	firstKey, secondKey := portableConfigPathKey(first), portableConfigPathKey(second)
+	return firstKey == secondKey || strings.HasPrefix(firstKey, secondKey+"/") || strings.HasPrefix(secondKey, firstKey+"/")
+}
+
+func portablePathWithin(root, candidate string) bool {
+	rootKey, candidateKey := portableConfigPathKey(root), portableConfigPathKey(candidate)
+	return candidateKey == rootKey || strings.HasPrefix(candidateKey, rootKey+"/")
 }
 
 func (f LocaleFiles) Paths() map[string]string {

@@ -10,6 +10,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -193,11 +195,7 @@ func TestRunAuthLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	configHome := t.TempDir()
-	if runtime.GOOS == "windows" {
-		t.Setenv("AppData", configHome)
-	} else {
-		t.Setenv("XDG_CONFIG_HOME", configHome)
-	}
+	isolateUserConfigDir(t, configHome)
 	environment, stdout, _ := testEnvironment(nil)
 	environment.stdin = strings.NewReader("issuer\nkey-id\n" + keyPath + "\n")
 	if err := runWithEnvironment(context.Background(), []string{"auth", "login"}, environment); err != nil {
@@ -217,11 +215,7 @@ func TestRunAuthLogin(t *testing.T) {
 
 func TestRunAuthLogout(t *testing.T) {
 	configHome := t.TempDir()
-	if runtime.GOOS == "windows" {
-		t.Setenv("AppData", configHome)
-	} else {
-		t.Setenv("XDG_CONFIG_HOME", configHome)
-	}
+	isolateUserConfigDir(t, configHome)
 	keyPath := filepath.Join(t.TempDir(), "AuthKey_TEST.p8")
 	if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
 		t.Fatal(err)
@@ -236,6 +230,13 @@ func TestRunAuthLogout(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Removed stored credentials") {
 		t.Fatalf("unexpected output: %q", stdout.String())
 	}
+}
+
+func isolateUserConfigDir(t *testing.T, directory string) {
+	t.Helper()
+	t.Setenv("HOME", directory)
+	t.Setenv("XDG_CONFIG_HOME", directory)
+	t.Setenv("AppData", directory)
 }
 
 func TestRunInitPullAndPush(t *testing.T) {
@@ -367,6 +368,92 @@ localizations:
 	}
 	if cfg.Version != config.CurrentVersion || cfg.Localizations["en-US"].Values.Name == nil || *cfg.Localizations["en-US"].Values.Name != "Example" {
 		t.Fatalf("forced configuration = %#v", cfg)
+	}
+}
+
+func TestRunPullRequiresPermissionToDeleteLocalAssets(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	configPath := filepath.Join(directory, "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	cfg.Metadata, cfg.Categories, cfg.AgeRating = config.MetadataValues{}, config.CategoryValues{}, config.AgeRatingValues{}
+	localization := cfg.Localizations["en-US"]
+	name := "Example"
+	localization.Values, localization.Files = config.LocaleValues{Name: &name}, config.LocaleFiles{}
+	cfg.Localizations["en-US"] = localization
+	cfg.Assets.Screenshots = "assets/screenshots"
+	if err := config.Save(configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	assetPath := filepath.Join(directory, "assets", "screenshots", "en-US", "APP_IPHONE_67", "01.png")
+	if err := os.MkdirAll(filepath.Dir(assetPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(assetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(file, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	remote := appstore.Metadata{
+		AppID: "app-1", AppInfoID: "info-1", VersionID: "version-1",
+		Localizations: map[string]appstore.Localization{"en-US": {Values: map[string]string{"name": "Example"}}},
+		Screenshots:   map[string]map[string][]appstore.Asset{},
+	}
+	client := mockStoreClient{fetchMetadata: func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error) {
+		return remote, nil
+	}}
+	environment, _, _ := testEnvironment(client)
+	args := []string{"pull", "--config", configPath}
+	if err := runWithEnvironment(context.Background(), args, environment); err == nil || !strings.Contains(err.Error(), "--allow-local-asset-deletions") {
+		t.Fatalf("error = %v", err)
+	}
+	if _, err := os.Stat(assetPath); err != nil {
+		t.Fatalf("asset changed without permission: %v", err)
+	}
+	if err := runWithEnvironment(context.Background(), append(args, "--allow-local-asset-deletions"), environment); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(assetPath); !os.IsNotExist(err) {
+		t.Fatalf("asset was not removed: %v", err)
+	}
+}
+
+func TestRunPullBootstrapsMissingAssetDirectory(t *testing.T) {
+	t.Parallel()
+	directory := t.TempDir()
+	configPath := filepath.Join(directory, "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0.0", []string{"en-US"})
+	cfg.Metadata, cfg.Categories, cfg.AgeRating = config.MetadataValues{}, config.CategoryValues{}, config.AgeRatingValues{}
+	localization := cfg.Localizations["en-US"]
+	name := "Example"
+	localization.Values, localization.Files = config.LocaleValues{Name: &name}, config.LocaleFiles{}
+	cfg.Localizations["en-US"] = localization
+	cfg.Assets.Screenshots = "assets/screenshots"
+	if err := config.Save(configPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	remote := appstore.Metadata{
+		AppID: "app-1", AppInfoID: "info-1", VersionID: "version-1",
+		Localizations: map[string]appstore.Localization{"en-US": {Values: map[string]string{"name": "Example"}}},
+		Screenshots: map[string]map[string][]appstore.Asset{"en-US": {"APP_IPHONE_67": {{
+			FileName: "01.png", Content: []byte("downloaded screenshot"),
+		}}}},
+	}
+	client := mockStoreClient{fetchMetadata: func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error) {
+		return remote, nil
+	}}
+	environment, _, _ := testEnvironment(client)
+	if err := runWithEnvironment(context.Background(), []string{"pull", "--config", configPath}, environment); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "assets", "screenshots", "en-US", "APP_IPHONE_67", "01.png")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("remote asset was not bootstrapped: %v", err)
 	}
 }
 

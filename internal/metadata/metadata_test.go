@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Arata1202/ascdir/internal/appstore"
+	"github.com/Arata1202/ascdir/internal/atomicfile"
 	"github.com/Arata1202/ascdir/internal/config"
 )
 
@@ -90,6 +92,245 @@ func TestWriteLocalCreatesPrivacyPolicyTextForTVOS(t *testing.T) {
 	}
 	if got := string(data); got != "Privacy policy\n" {
 		t.Fatalf("privacy policy text = %q", got)
+	}
+}
+
+func TestWriteLocalNewCreatesNestedConfigurationDirectory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "some", "new", "path", "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	remote := appstore.Metadata{Localizations: map[string]appstore.Localization{"en-US": {Values: map[string]string{"name": "Example"}}}}
+	if err := WriteLocalNew(cfg, configPath, remote); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("nested config was not created: %v", err)
+	}
+}
+
+func TestWriteLocalRejectsUnsafeRemoteAssetFileName(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.Screenshots = "assets/screenshots"
+	remote := appstore.Metadata{
+		Localizations: map[string]appstore.Localization{"en-US": {}},
+		Screenshots:   map[string]map[string][]appstore.Asset{"en-US": {"APP_IPHONE_67": {{FileName: "../../../../victim.png", Content: []byte("image")}}}},
+	}
+	if err := WriteLocal(cfg, filepath.Join(dir, "ascdir.yaml"), remote); err == nil || !strings.Contains(err.Error(), "safe file name") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestWriteLocalRejectsPortableAssetNameCollisions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.Screenshots = "assets/screenshots"
+	remote := appstore.Metadata{
+		Localizations: map[string]appstore.Localization{"en-US": {}},
+		Screenshots: map[string]map[string][]appstore.Asset{"en-US": {"APP_IPHONE_67": {
+			{FileName: "é.png", Content: []byte("first")},
+			{FileName: "e\u0301.png", Content: []byte("second")},
+		}}},
+	}
+	if err := WriteLocal(cfg, filepath.Join(dir, "ascdir.yaml"), remote); err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestWriteLocalRejectsWindowsReservedAssetNameWithExtraExtension(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.Screenshots = "assets/screenshots"
+	remote := appstore.Metadata{
+		Localizations: map[string]appstore.Localization{"en-US": {}},
+		Screenshots:   map[string]map[string][]appstore.Asset{"en-US": {"APP_IPHONE_67": {{FileName: "CON.foo.png", Content: []byte("image")}}}},
+	}
+	if err := WriteLocal(cfg, filepath.Join(dir, "ascdir.yaml"), remote); err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestWriteLocalRejectsMetadataCollisionWithConfiguration(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "ascdir.yaml")
+	contents := `version: "1"
+app:
+  id: app-1
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.0
+localizations:
+  en-US:
+    description: ascdir.yaml
+`
+	if err := os.WriteFile(configPath, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := appstore.Metadata{Localizations: map[string]appstore.Localization{"en-US": {Values: map[string]string{"description": "replacement"}}}}
+	if err := WriteLocal(cfg, configPath, remote); err == nil || !strings.Contains(err.Error(), "configuration") {
+		t.Fatalf("error = %v", err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != contents {
+		t.Fatal("configuration was overwritten")
+	}
+}
+
+func TestWriteLocalIgnoresAssetsForUnconfiguredLocale(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.Screenshots = "assets/screenshots"
+	remote := appstore.Metadata{
+		Localizations: map[string]appstore.Localization{"en-US": {}, "ja": {}},
+		Screenshots:   map[string]map[string][]appstore.Asset{"ja": {"APP_IPHONE_67": {{FileName: "01.png", Content: []byte("image")}}}},
+	}
+	if err := WriteLocal(cfg, filepath.Join(dir, "ascdir.yaml"), remote); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "assets", "screenshots", "ja")); !os.IsNotExist(err) {
+		t.Fatalf("unconfigured locale was written: %v", err)
+	}
+}
+
+func TestWriteLocalIgnoresPreviewFrameTimesForUnconfiguredLocale(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "ascdir.yaml")
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.AppPreviews = "assets/app-previews"
+	remote := appstore.Metadata{
+		Localizations: map[string]appstore.Localization{"en-US": {}, "ja": {}},
+		AppPreviews: map[string]map[string][]appstore.Asset{"ja": {"IPHONE_67": {{
+			FileName: "01.mp4", Content: []byte("video"), PreviewFrameTimeCode: "00:00:05",
+		}}}},
+	}
+	if err := WriteLocal(cfg, configPath, remote); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Assets.PreviewFrameTimes) != 0 {
+		t.Fatalf("unconfigured frame times = %#v", updated.Assets.PreviewFrameTimes)
+	}
+}
+
+func TestWriteLocalRejectsDownloadedAssetChecksumMismatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.Screenshots = "assets/screenshots"
+	remote := appstore.Metadata{
+		Localizations: map[string]appstore.Localization{"en-US": {}},
+		Screenshots:   map[string]map[string][]appstore.Asset{"en-US": {"APP_IPHONE_67": {{FileName: "01.png", Content: []byte("image"), Checksum: "00000000000000000000000000000000"}}}},
+	}
+	if err := WriteLocal(cfg, filepath.Join(dir, "ascdir.yaml"), remote); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestReadLocalRejectsInvalidUTF8(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metadata", "en-US", "description.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte{0xff, 0xfe}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	if _, err := ReadLocal(cfg, filepath.Join(dir, "ascdir.yaml")); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCommitFileTransactionRollsBackEarlierReplacements(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.txt")
+	if err := os.WriteFile(first, []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(dir, "second.txt")
+	if err := os.Mkdir(second, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	firstPending, err := atomicfile.Prepare(first, []byte("replacement"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstPending.Cleanup()
+	secondPending, err := atomicfile.Prepare(second, []byte("replacement"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondPending.Cleanup()
+	if _, err := commitFileTransaction([]*atomicfile.Pending{firstPending, secondPending}, []string{first, second}, nil); err == nil {
+		t.Fatal("transaction unexpectedly succeeded")
+	}
+	data, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "original" {
+		t.Fatalf("first file was not rolled back: %q", data)
+	}
+}
+
+func TestCommitFileTransactionReportsAndKeepsBackupWhenRestoreFails(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.txt")
+	if err := os.WriteFile(first, []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(dir, "second.txt")
+	if err := os.Mkdir(second, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	firstPending, err := atomicfile.Prepare(first, []byte("replacement"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstPending.Cleanup()
+	secondPending, err := atomicfile.Prepare(second, []byte("replacement"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer secondPending.Cleanup()
+	ops := transactionFileOps{
+		remove: os.Remove,
+		rename: func(source, destination string) error {
+			if strings.Contains(filepath.Base(source), ".ascdir-backup-") {
+				return errors.New("injected restore failure")
+			}
+			return os.Rename(source, destination)
+		},
+	}
+	_, err = commitFileTransactionWithOps([]*atomicfile.Pending{firstPending, secondPending}, []string{first, second}, nil, ops)
+	if err == nil || !strings.Contains(err.Error(), "restore") || !strings.Contains(err.Error(), "backup") {
+		t.Fatalf("error = %v", err)
+	}
+	backups, err := filepath.Glob(filepath.Join(dir, ".ascdir-backup-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 1 {
+		t.Fatalf("recoverable backups = %#v", backups)
 	}
 }
 

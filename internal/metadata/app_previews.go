@@ -15,14 +15,17 @@ import (
 	"github.com/Arata1202/ascdir/internal/config"
 )
 
-func readLocalAppPreviews(cfg config.Config, base string) (map[string]map[string][]appstore.Asset, error) {
+func readLocalAppPreviews(cfg config.Config, base string, allowMissing bool) (map[string]map[string][]appstore.Asset, error) {
 	result := map[string]map[string][]appstore.Asset{}
 	if cfg.Assets.AppPreviews == "" {
 		return result, nil
 	}
 	candidate := filepath.Join(base, filepath.FromSlash(cfg.Assets.AppPreviews))
 	if _, err := os.Stat(candidate); os.IsNotExist(err) {
-		return result, nil
+		if allowMissing {
+			return result, nil
+		}
+		return nil, fmt.Errorf("assets.app_previews directory does not exist: %s", cfg.Assets.AppPreviews)
 	} else if err != nil {
 		return nil, fmt.Errorf("stat assets.app_previews: %w", err)
 	}
@@ -30,6 +33,7 @@ func readLocalAppPreviews(cfg config.Config, base string) (map[string]map[string
 	if err != nil {
 		return nil, fmt.Errorf("resolve assets.app_previews: %w", err)
 	}
+	portablePaths := map[string]string{}
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -48,10 +52,26 @@ func readLocalAppPreviews(cfg config.Config, base string) (map[string]map[string
 			}
 			return nil
 		}
+		if ignoredAssetHelperFile(entry.Name()) {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("app preview %s must not be a symbolic link", path)
+		}
 		if len(parts) != 3 {
 			return fmt.Errorf("app preview %s must use <locale>/<preview-type>/<file>", relative)
 		}
 		locale, previewType := parts[0], parts[1]
+		for _, component := range []struct{ kind, value string }{{"app preview locale", locale}, {"app preview type", previewType}, {"app preview file name", entry.Name()}} {
+			if err := validateRemotePathComponent(component.kind, component.value); err != nil {
+				return err
+			}
+		}
+		portableKey := portablePathKey(relative)
+		if previous, exists := portablePaths[portableKey]; exists {
+			return fmt.Errorf("app preview %s collides with %s on a supported filesystem", relative, previous)
+		}
+		portablePaths[portableKey] = relative
 		if _, ok := cfg.Localizations[locale]; !ok {
 			return fmt.Errorf("app preview locale %q is not configured", locale)
 		}
@@ -100,6 +120,10 @@ func readLocalAppPreviews(cfg config.Config, base string) (map[string]map[string
 	return result, nil
 }
 
+func ignoredAssetHelperFile(name string) bool {
+	return name == ".DS_Store" || name == ".gitkeep"
+}
+
 func appPreviewChanges(desired, remote appstore.Metadata) []appstore.Change {
 	var changes []appstore.Change
 	locales := make([]string, 0, len(desired.Localizations))
@@ -140,7 +164,7 @@ func previewAssetsEqual(before, after []appstore.Asset) bool {
 		return false
 	}
 	for index := range before {
-		if before[index].Checksum != after[index].Checksum || before[index].PreviewFrameTimeCode != after[index].PreviewFrameTimeCode {
+		if before[index].Checksum != after[index].Checksum || before[index].FileName != after[index].FileName || before[index].PreviewFrameTimeCode != after[index].PreviewFrameTimeCode {
 			return false
 		}
 	}
