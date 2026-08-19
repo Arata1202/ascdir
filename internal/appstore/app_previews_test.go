@@ -51,6 +51,68 @@ func TestFetchAppPreviewsDownloadsVideoAndFrameTime(t *testing.T) {
 	}
 }
 
+func TestFetchAppPreviewsRemovesEarlierDownloadsOnLaterError(t *testing.T) {
+	t.Parallel()
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/appStoreVersionLocalizations/loc-1/appPreviewSets":
+			writeData(t, w, []any{
+				resourceJSON("set-1", "appPreviewSets", map[string]any{"previewType": "IPHONE_67"}),
+				resourceJSON("set-2", "appPreviewSets", map[string]any{"previewType": "IPAD_PRO_3GEN_129"}),
+			})
+		case "/v1/appPreviewSets/set-1/appPreviews":
+			writeData(t, w, []any{resourceJSON("preview-1", "appPreviews", map[string]any{
+				"fileName": "01.mp4", "sourceFileChecksum": "abc", "mimeType": "video/mp4", "videoUrl": server.URL + "/video",
+			})})
+		case "/video":
+			_, _ = w.Write([]byte("video"))
+		case "/v1/appPreviewSets/set-2/appPreviews":
+			http.Error(w, "failed", http.StatusInternalServerError)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := testClient(t, server.URL)
+	client.httpClient = server.Client()
+	metadata := Metadata{Localizations: map[string]Localization{"en-US": {VersionLocalizationID: "loc-1"}}, AppPreviews: map[string]map[string][]Asset{}, AppPreviewSetIDs: map[string]map[string]string{}}
+	if err := client.fetchAppPreviews(context.Background(), &metadata, true); err == nil {
+		t.Fatal("fetch unexpectedly succeeded")
+	}
+	path := metadata.AppPreviews["en-US"]["IPHONE_67"][0].Path
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("temporary download remains: %v", err)
+	}
+}
+
+func TestAssetDownloadRequiresHTTPSAcrossRedirects(t *testing.T) {
+	t.Parallel()
+	insecureReached := false
+	insecure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		insecureReached = true
+		_, _ = w.Write([]byte("unsafe"))
+	}))
+	defer insecure.Close()
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", insecure.URL)
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer secure.Close()
+	client := testClient(t, secure.URL)
+	client.httpClient = secure.Client()
+	if _, err := client.getAsset(context.Background(), insecure.URL); err == nil || !strings.Contains(err.Error(), "HTTPS") {
+		t.Fatalf("plain HTTP error = %v", err)
+	}
+	if _, err := client.getAsset(context.Background(), secure.URL); err == nil || !strings.Contains(err.Error(), "HTTPS") {
+		t.Fatalf("redirect error = %v", err)
+	}
+	if insecureReached {
+		t.Fatal("client followed an HTTPS-to-HTTP redirect")
+	}
+}
+
 func TestUploadAppPreviewCommitsVideo(t *testing.T) {
 	t.Parallel()
 	content := []byte("video content")

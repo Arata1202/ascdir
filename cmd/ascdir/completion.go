@@ -40,7 +40,7 @@ const bashCompletion = `_ascdir() {
   elif [[ ${current} == -* ]]; then
     case "${COMP_WORDS[1]}" in
       init) COMPREPLY=($(compgen -W "--bundle-id --version --platform --locale --config --force" -- "${current}")) ;;
-      pull) COMPREPLY=($(compgen -W "--config --dry-run" -- "${current}")) ;;
+      pull) COMPREPLY=($(compgen -W "--config --dry-run --allow-local-asset-deletions" -- "${current}")) ;;
       push) COMPREPLY=($(compgen -W "--config --dry-run --allow-empty --allow-irreversible --allow-asset-deletions --allow-availability-changes --allow-commercial-changes" -- "${current}")) ;;
       check) COMPREPLY=($(compgen -W "--config" -- "${current}")) ;;
       price-points) COMPREPLY=($(compgen -W "--config --territory" -- "${current}")) ;;
@@ -66,7 +66,7 @@ _ascdir() {
   else
     case ${words[2]} in
       init) _values 'option' --bundle-id --version --platform --locale --config --force ;;
-      pull) _values 'option' --config --dry-run ;;
+      pull) _values 'option' --config --dry-run --allow-local-asset-deletions ;;
       push) _values 'option' --config --dry-run --allow-empty --allow-irreversible --allow-asset-deletions --allow-availability-changes --allow-commercial-changes ;;
       check) _values 'option' --config ;;
       price-points) _values 'option' --config --territory ;;
@@ -91,6 +91,7 @@ complete -c ascdir -n '__fish_seen_subcommand_from price-points' -l config -r
 complete -c ascdir -n '__fish_seen_subcommand_from price-points' -l territory -r
 complete -c ascdir -n '__fish_seen_subcommand_from init' -l force
 complete -c ascdir -n '__fish_seen_subcommand_from pull push' -l dry-run
+complete -c ascdir -n '__fish_seen_subcommand_from pull' -l allow-local-asset-deletions
 complete -c ascdir -n '__fish_seen_subcommand_from push' -l allow-empty
 complete -c ascdir -n '__fish_seen_subcommand_from push' -l allow-irreversible
 complete -c ascdir -n '__fish_seen_subcommand_from push' -l allow-asset-deletions
@@ -110,7 +111,7 @@ const powershellCompletion = `Register-ArgumentCompleter -Native -CommandName as
   } elseif ($elements[1].Value -eq 'init') {
     '--bundle-id','--version','--platform','--locale','--config','--force'
   } elseif ($elements[1].Value -eq 'pull') {
-    '--config','--dry-run'
+    '--config','--dry-run','--allow-local-asset-deletions'
   } elseif ($elements[1].Value -eq 'push') {
     '--config','--dry-run','--allow-empty','--allow-irreversible','--allow-asset-deletions','--allow-availability-changes','--allow-commercial-changes'
   } elseif ($elements[1].Value -eq 'check') {

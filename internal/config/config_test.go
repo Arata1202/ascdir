@@ -162,6 +162,67 @@ func TestEncodeUpdatedValuesUpdatesPreviewFrameTimes(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsProjectRootAsAssetDirectory(t *testing.T) {
+	t.Parallel()
+	for _, configure := range []func(*Config){
+		func(cfg *Config) { cfg.Assets.Screenshots = "." },
+		func(cfg *Config) { cfg.Assets.AppPreviews = "." },
+	} {
+		cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+		configure(&cfg)
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("project root was accepted as an asset directory")
+		}
+	}
+}
+
+func TestValidateRejectsOverlappingManagedDirectories(t *testing.T) {
+	t.Parallel()
+	cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.Screenshots = "assets"
+	cfg.Assets.AppPreviews = "assets/previews"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "non-nested") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestValidateRejectsMetadataInsideAssetDirectory(t *testing.T) {
+	t.Parallel()
+	cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	cfg.Assets.Screenshots = "metadata"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "must not be inside") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestValidateRejectsPathsThatChangeMeaningOnWindows(t *testing.T) {
+	t.Parallel()
+	cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+	localization := cfg.Localizations["en-US"]
+	localization.Files.Description = `metadata\en-US\description.md`
+	cfg.Localizations["en-US"] = localization
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "relative path") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestValidateRejectsPortableMetadataPathCollisions(t *testing.T) {
+	t.Parallel()
+	for _, paths := range [][2]string{
+		{"Metadata/en-US/value.md", "metadata/en-US/value.md"},
+		{"metadata/en-US/é.md", "metadata/en-US/e\u0301.md"},
+	} {
+		cfg := New("123", "com.example.app", "IOS", "1.0", []string{"en-US"})
+		localization := cfg.Localizations["en-US"]
+		localization.Files.Description = paths[0]
+		localization.Files.PromotionalText = paths[1]
+		cfg.Localizations["en-US"] = localization
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "collides") {
+			t.Fatalf("paths %q error = %v", paths, err)
+		}
+	}
+}
+
 func TestPricingRoundTripAndDateValidation(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ascdir.yaml")
@@ -398,6 +459,11 @@ app:
   version: 1.0.0
 metadata:
   copyright: 2025 Example, Inc. # custom copyright comment
+availability:
+  available_in_new_territories: true # availability comment
+  territories:
+    USA:
+      available: true # territory comment
 localizations:
   en-US: # locale comment
     values:
@@ -416,12 +482,14 @@ localizations:
 	localization.Values.SetManaged("name", "After")
 	cfg.Localizations["en-US"] = localization
 	cfg.Metadata.SetManaged("copyright", "2026 Example, Inc.")
+	cfg.Availability.SetManaged("availability.available_in_new_territories", "false")
+	cfg.Availability.SetManaged("availability.territories.USA.available", "false")
 	updated, err := EncodeUpdatedValues(path, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(updated)
-	for _, expected := range []string{"# project comment", "# locale comment", "copyright: 2026 Example, Inc. # custom copyright comment", "name: After # custom name comment"} {
+	for _, expected := range []string{"# project comment", "# locale comment", "copyright: 2026 Example, Inc. # custom copyright comment", "name: After # custom name comment", "available_in_new_territories: false # availability comment", "available: false # territory comment"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("updated config is missing %q:\n%s", expected, text)
 		}
@@ -431,6 +499,76 @@ localizations:
 	}
 	if strings.Index(text, "values:") > strings.Index(text, "files:") {
 		t.Fatalf("update changed key order:\n%s", text)
+	}
+}
+
+func TestEncodeUpdatedValuesKeepsSequenceCommentsWithReorderedValues(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	contents := `version: "2"
+app:
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.0.0
+pricing:
+  base_territory: USA
+  scheduled_prices:
+    - price_point_id: point-1 # first price
+    - price_point_id: point-2 # second price
+localizations:
+  en-US:
+    values:
+      name: Example
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Pricing.ScheduledPrices[0], cfg.Pricing.ScheduledPrices[1] = cfg.Pricing.ScheduledPrices[1], cfg.Pricing.ScheduledPrices[0]
+	updated, err := EncodeUpdatedValues(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(updated)
+	if !strings.Contains(text, "price_point_id: point-1 # first price") || !strings.Contains(text, "price_point_id: point-2 # second price") {
+		t.Fatalf("sequence comments moved to another value:\n%s", text)
+	}
+}
+
+func TestEncodeUpdatedValuesKeepsCommentWhenSingleSequenceValueChanges(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	contents := `version: "2"
+app:
+  bundle_id: com.example.app
+  platform: IOS
+  version: 1.0.0
+pricing:
+  base_territory: USA
+  scheduled_prices:
+    - price_point_id: point-1 # selected price
+localizations:
+  en-US:
+    values:
+      name: Example
+`
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Pricing.ScheduledPrices[0].PricePointID = "point-2"
+	updated, err := EncodeUpdatedValues(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "price_point_id: point-2 # selected price") {
+		t.Fatalf("updated value lost its comment:\n%s", updated)
 	}
 }
 

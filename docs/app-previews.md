@@ -27,3 +27,6 @@ timecodes are optional and keyed by the path relative to the preview root.
 uses App Store Connect's reservation, chunked upload, and commit workflow.
 Changing only a poster frame updates the existing video without re-uploading
 it. Replacing or deleting a video requires `--allow-asset-deletions`.
+
+If `pull` would remove a stale local preview, review `pull --dry-run` and rerun
+with `--allow-local-asset-deletions`.

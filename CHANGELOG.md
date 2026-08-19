@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Isolate credential tests from real user configuration directories on every supported OS.
+- Keep pulled assets inside dedicated managed roots, reject unsafe filenames and symlinks, and prevent configuration or metadata path collisions.
+- Reject missing asset directories instead of treating them as an intentional empty set, and require confirmation before pull removes local assets.
+- Validate downloaded asset checksums and metadata UTF-8, clean up failed App Preview downloads, and roll back multi-file pull failures.
+- Preserve nested YAML comments and support `init --config` paths whose parent directories do not exist yet.
+
 ## [1.1.3] - 2026-08-19
 
 ### Added

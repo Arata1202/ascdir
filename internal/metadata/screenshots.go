@@ -17,14 +17,17 @@ import (
 	"github.com/Arata1202/ascdir/internal/config"
 )
 
-func readLocalScreenshots(cfg config.Config, base string) (map[string]map[string][]appstore.Asset, error) {
+func readLocalScreenshots(cfg config.Config, base string, allowMissing bool) (map[string]map[string][]appstore.Asset, error) {
 	result := map[string]map[string][]appstore.Asset{}
 	if cfg.Assets.Screenshots == "" {
 		return result, nil
 	}
 	candidate := filepath.Join(base, filepath.FromSlash(cfg.Assets.Screenshots))
 	if _, err := os.Stat(candidate); os.IsNotExist(err) {
-		return result, nil
+		if allowMissing {
+			return result, nil
+		}
+		return nil, fmt.Errorf("assets.screenshots directory does not exist: %s", cfg.Assets.Screenshots)
 	} else if err != nil {
 		return nil, fmt.Errorf("stat assets.screenshots: %w", err)
 	}
@@ -32,6 +35,7 @@ func readLocalScreenshots(cfg config.Config, base string) (map[string]map[string
 	if err != nil {
 		return nil, fmt.Errorf("resolve assets.screenshots: %w", err)
 	}
+	portablePaths := map[string]string{}
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -54,6 +58,12 @@ func readLocalScreenshots(cfg config.Config, base string) (map[string]map[string
 			}
 			return nil
 		}
+		if ignoredAssetHelperFile(entry.Name()) {
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("screenshot %s must not be a symbolic link", path)
+		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
@@ -63,6 +73,16 @@ func readLocalScreenshots(cfg config.Config, base string) (map[string]map[string
 			return fmt.Errorf("screenshot %s must use <locale>/<display-type>/<file>", relative)
 		}
 		locale, displayType := parts[0], parts[1]
+		for _, component := range []struct{ kind, value string }{{"screenshot locale", locale}, {"screenshot display type", displayType}, {"screenshot file name", entry.Name()}} {
+			if err := validateRemotePathComponent(component.kind, component.value); err != nil {
+				return err
+			}
+		}
+		portableKey := portablePathKey(relative)
+		if previous, exists := portablePaths[portableKey]; exists {
+			return fmt.Errorf("screenshot %s collides with %s on a supported filesystem", relative, previous)
+		}
+		portablePaths[portableKey] = relative
 		if _, ok := cfg.Localizations[locale]; !ok {
 			return fmt.Errorf("screenshot locale %q is not configured", locale)
 		}
@@ -153,7 +173,7 @@ func assetsEqual(before, after []appstore.Asset) bool {
 		return false
 	}
 	for index := range before {
-		if before[index].Checksum != after[index].Checksum {
+		if before[index].Checksum != after[index].Checksum || before[index].FileName != after[index].FileName {
 			return false
 		}
 	}
@@ -176,5 +196,5 @@ func AssetSetDeletesRemoteFiles(change appstore.AssetSetChange) bool {
 }
 
 func assetDeletionKey(kind string, asset appstore.Asset) string {
-	return asset.Checksum
+	return asset.Checksum + "\x00" + asset.FileName
 }

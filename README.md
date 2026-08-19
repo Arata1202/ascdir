@@ -173,6 +173,9 @@ ascdir pull --dry-run
 ascdir pull
 ```
 
+If the remote state would remove local screenshots or App Previews, review the
+dry run and confirm with `ascdir pull --allow-local-asset-deletions`.
+
 ## Configuration
 
 ```yaml
@@ -253,7 +256,7 @@ Remove a key to leave that field unmanaged. An explicitly empty value remains ma
 
 Version 1 configurations remain fully supported. Existing projects can continue using one file per field without modification; newly initialized projects use version 2. To migrate manually, move short values into `values`, keep long-form paths under `files`, and change `version` to `"2"`.
 
-Unknown configuration keys are rejected so misspelled fields cannot be silently ignored. During `pull`, ascdir updates only the managed YAML value nodes, preserving user comments and key order. The configuration and metadata files are staged before any destination is replaced, and each replacement is atomic.
+Unknown configuration keys are rejected so misspelled fields cannot be silently ignored. During `pull`, ascdir updates only managed values and preserves YAML comments and key order. Configuration, metadata, and asset replacements are staged and committed as one recoverable local transaction.
 
 Supported platforms are `IOS`, `MAC_OS`, `TV_OS`, and `VISION_OS`.
 
@@ -310,7 +313,7 @@ Finds an existing app and version, generates the configuration, and pulls its lo
 
 ### `ascdir pull`
 
-Downloads configured fields into `ascdir.yaml`, referenced Markdown files, and managed asset directories. Local edits are overwritten, so commit or review them first. Use `pull --dry-run` to preview the local differences without writing files.
+Downloads configured fields into `ascdir.yaml`, referenced Markdown files, and managed asset directories. Local edits are overwritten, so commit or review them first. Use `pull --dry-run` to preview the local differences without writing files. If the plan removes local assets, rerun with `--allow-local-asset-deletions` after reviewing the deletion.
 
 ### `ascdir push`
 

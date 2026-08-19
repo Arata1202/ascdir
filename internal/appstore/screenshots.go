@@ -106,11 +106,7 @@ type uploadOperation struct {
 }
 
 func (c *Client) downloadAsset(ctx context.Context, assetURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.getAsset(ctx, assetURL)
 	if err != nil {
 		return nil, err
 	}

@@ -9,11 +9,7 @@ import (
 
 func TestSaveAndLoad(t *testing.T) {
 	configHome := t.TempDir()
-	if runtime.GOOS == "windows" {
-		t.Setenv("AppData", configHome)
-	} else {
-		t.Setenv("XDG_CONFIG_HOME", configHome)
-	}
+	isolateUserConfigDir(t, configHome)
 	keyPath := filepath.Join(t.TempDir(), "AuthKey_TEST.p8")
 	if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
 		t.Fatal(err)
@@ -39,11 +35,7 @@ func TestSaveAndLoad(t *testing.T) {
 }
 
 func TestLoadMissing(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Setenv("AppData", t.TempDir())
-	} else {
-		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	}
+	isolateUserConfigDir(t, t.TempDir())
 	if _, err := Load(); err == nil {
 		t.Fatal("missing config loaded successfully")
 	}
@@ -51,11 +43,7 @@ func TestLoadMissing(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	configHome := t.TempDir()
-	if runtime.GOOS == "windows" {
-		t.Setenv("AppData", configHome)
-	} else {
-		t.Setenv("XDG_CONFIG_HOME", configHome)
-	}
+	isolateUserConfigDir(t, configHome)
 	keyPath := filepath.Join(t.TempDir(), "AuthKey_TEST.p8")
 	if err := os.WriteFile(keyPath, []byte("key"), 0o600); err != nil {
 		t.Fatal(err)
@@ -69,4 +57,14 @@ func TestRemove(t *testing.T) {
 	if _, removed, err := Remove(); err != nil || removed {
 		t.Fatalf("second Remove() = removed %v, error %v", removed, err)
 	}
+}
+
+func isolateUserConfigDir(t *testing.T, directory string) {
+	t.Helper()
+	// os.UserConfigDir uses a different environment variable on each OS.
+	// Set all supported inputs so tests can never fall back to a real user's
+	// credentials directory when they run on another platform.
+	t.Setenv("HOME", directory)
+	t.Setenv("XDG_CONFIG_HOME", directory)
+	t.Setenv("AppData", directory)
 }

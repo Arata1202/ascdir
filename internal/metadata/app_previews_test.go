@@ -25,7 +25,7 @@ func TestReadAndDiffLocalAppPreviews(t *testing.T) {
 	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
 	cfg.Assets.AppPreviews = "assets/app-previews"
 	cfg.Assets.PreviewFrameTimes = map[string]string{"en-US/IPHONE_67/01.mp4": "00:00:05"}
-	previews, err := readLocalAppPreviews(cfg, dir)
+	previews, err := readLocalAppPreviews(cfg, dir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestReadLocalAppPreviewsRejectsUnsupportedFile(t *testing.T) {
 	}
 	cfg := config.New("app-1", "com.example.app", "IOS", "1.0", []string{"en-US"})
 	cfg.Assets.AppPreviews = "assets/app-previews"
-	if _, err := readLocalAppPreviews(cfg, dir); err == nil {
+	if _, err := readLocalAppPreviews(cfg, dir, false); err == nil {
 		t.Fatal("unsupported preview file was accepted")
 	}
 }
