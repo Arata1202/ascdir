@@ -29,8 +29,10 @@ jobs:
           coverage="$(go tool cover -func=coverage.out | awk '/^total:/ { gsub(/%/, "", $3); print $3 }')"
           awk -v coverage="$coverage" 'BEGIN { if (coverage < 75) { print "coverage below 75%: " coverage "%"; exit 1 } }'
       - run: go vet ./...
-      - name: Validate installer syntax
-        run: sh -n install.sh
+      - name: Validate installer
+        run: |
+          sh -n install.sh
+          sh scripts/test-installer.sh
       - name: Static analysis
         run: go run honnef.co/go/tools/cmd/staticcheck@2026.1 ./...
       - name: Validate GitHub Actions
@@ -45,6 +47,10 @@ jobs:
   goreleaser:
     needs: quality
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,3 +84,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attest release archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: ${{ github.workspace }}/dist/checksums.txt

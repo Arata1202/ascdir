@@ -56,7 +56,34 @@ if [ "$actual" != "$expected" ]; then
   exit 1
 fi
 
+entries_file="${temporary_dir}/archive-entries.txt"
+tar -tzf "${temporary_dir}/${archive}" > "$entries_file"
+entry_count=0
+while IFS= read -r entry; do
+  entry_count=$((entry_count + 1))
+  case "$entry" in
+    "$binary"|"./$binary") ;;
+    *)
+      echo "archive contains an unexpected path: ${entry}" >&2
+      exit 1
+      ;;
+  esac
+done < "$entries_file"
+if [ "$entry_count" -ne 1 ]; then
+  echo "archive must contain exactly one ${binary} executable" >&2
+  exit 1
+fi
+entry_type="$(tar -tvzf "${temporary_dir}/${archive}" | awk 'NR == 1 { print substr($1, 1, 1) }')"
+if [ "$entry_type" != "-" ]; then
+  echo "archive entry for ${binary} must be a regular file" >&2
+  exit 1
+fi
+
 tar -xzf "${temporary_dir}/${archive}" -C "$temporary_dir"
+if [ ! -f "${temporary_dir}/${binary}" ] || [ -L "${temporary_dir}/${binary}" ]; then
+  echo "archive did not produce a regular ${binary} executable" >&2
+  exit 1
+fi
 install -m 0755 "${temporary_dir}/${binary}" "${install_dir}/${binary}"
 echo "Installed ${binary} ${version} to ${install_dir}/${binary}"
 case ":${PATH}:" in

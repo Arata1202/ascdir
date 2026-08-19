@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Publish signed GitHub build provenance for release archives and document how to verify it.
+- Exercise the checksum-verifying installer end to end in CI with safe and malicious archive fixtures.
+
 ### Fixed
 
 - Isolate credential tests from real user configuration directories on every supported OS.
@@ -26,6 +31,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - Require the release workflow to pass the same formatting, race, coverage, vet, static-analysis, workflow, and vulnerability checks as pull requests before publishing artifacts.
+- Reject release archives containing unexpected paths or non-regular installer payloads.
+- Document best-effort security support for the latest release without promising fixed response or resolution times.
 
 ## [1.1.3] - 2026-08-19
 
