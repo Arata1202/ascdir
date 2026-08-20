@@ -13,7 +13,7 @@ func TestRunCompletion(t *testing.T) {
 			if err := runCompletion([]string{shell}, &output); err != nil {
 				t.Fatal(err)
 			}
-			if output.Len() == 0 || !strings.Contains(output.String(), "ascdir") || !strings.Contains(output.String(), "allow-local-asset-deletions") || !strings.Contains(output.String(), "submit") || !strings.Contains(output.String(), "confirm") {
+			if output.Len() == 0 || !strings.Contains(output.String(), "ascdir") || !strings.Contains(output.String(), "allow-local-asset-deletions") || !strings.Contains(output.String(), "submit") || !strings.Contains(output.String(), "distribute") || !strings.Contains(output.String(), "confirm") {
 				t.Fatalf("completion output = %q", output.String())
 			}
 		})

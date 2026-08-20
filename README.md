@@ -409,6 +409,19 @@ ascdir testflight status
 ascdir testflight status --json
 ```
 
+### `ascdir testflight distribute`
+
+Distributes an uploaded, valid build to existing TestFlight groups. Group names are exact and `--group` is repeatable; ascdir never creates groups or testers.
+
+```sh
+ascdir testflight distribute --group "Internal Team" --dry-run
+ascdir testflight distribute --group "Internal Team" --confirm 1.2.0
+```
+
+Use `--build 42` to pin a build; otherwise the newest valid, unexpired build for the configured platform and version is selected. Internal groups require only build attachment. If any requested group is external, ascdir inspects the build's Beta App Review submission and creates one only when absent or rejected. Existing `WAITING_FOR_REVIEW`, `IN_REVIEW`, or `APPROVED` submissions are reused.
+
+Execution revalidates the complete plan immediately before mutation and requires the configured version through `--confirm`. See [TestFlight distribution](docs/testflight-distribution.md) for prerequisites and recovery behavior.
+
 ### `ascdir completion`
 
 Prints shell completion for Bash, Zsh, Fish, or PowerShell. For example, enable Zsh completion for the current session with:
@@ -423,7 +436,7 @@ See [Troubleshooting](docs/troubleshooting.md) for configuration discovery, auth
 
 ## Scope
 
-`ascdir` manages App Store Connect metadata and product-page assets, can inspect App Store and TestFlight release state, and can submit and manually release an App Store version. It does not upload or sign app builds, distribute TestFlight builds, or manage certificates, subscriptions, analytics, or customer reviews.
+`ascdir` manages App Store Connect metadata and product-page assets, can distribute existing builds through TestFlight groups, and can submit and manually release an App Store version. It does not upload or sign app builds, create TestFlight groups or testers, or manage certificates, subscriptions, analytics, or customer reviews.
 
 ## Security
 
@@ -432,6 +445,7 @@ See [Troubleshooting](docs/troubleshooting.md) for configuration discovery, auth
 - API errors are reported without printing credentials or JWTs.
 - `push --dry-run` never sends mutation requests.
 - `app-store submit --dry-run` and `app-store release --dry-run` never send mutation requests; execution is bound to the configured version with `--confirm`.
+- `testflight distribute --dry-run` never sends mutation requests; confirmed execution only attaches the selected build to resolved existing groups and, for external testing, submits that build for Beta App Review when needed.
 - Pagination links are restricted to the configured App Store Connect API origin, preventing bearer tokens from being forwarded to another host.
 - Metadata paths are confined to the configuration directory after resolving symbolic links.
 - Retried mutations are limited to idempotent updates and requests rejected by rate limiting.

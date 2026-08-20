@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,17 +26,33 @@ import (
 )
 
 type mockStoreClient struct {
-	checkAuth               func(context.Context) error
-	fetchMetadata           func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
-	applyMetadata           func(context.Context, appstore.Metadata, []string, []appstore.Change) error
-	listPricePoints         func(context.Context, string, string) ([]appstore.PricePoint, error)
-	resolveAppID            func(context.Context, string, string) (string, error)
-	fetchAppStoreStatus     func(context.Context, string, string, string, string) (appstore.AppStoreStatus, error)
-	fetchTestFlightStatus   func(context.Context, string, string, string, string) (appstore.TestFlightStatus, error)
-	planAppStoreSubmission  func(context.Context, string, string, string, string, appstore.SubmitOptions) (appstore.AppStoreReleasePlan, error)
-	applyAppStoreSubmission func(context.Context, appstore.AppStoreReleasePlan) error
-	planAppStoreRelease     func(context.Context, string, string, string, string) (appstore.AppStoreReleasePlan, error)
-	applyAppStoreRelease    func(context.Context, appstore.AppStoreReleasePlan) error
+	checkAuth                   func(context.Context) error
+	fetchMetadata               func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
+	applyMetadata               func(context.Context, appstore.Metadata, []string, []appstore.Change) error
+	listPricePoints             func(context.Context, string, string) ([]appstore.PricePoint, error)
+	resolveAppID                func(context.Context, string, string) (string, error)
+	fetchAppStoreStatus         func(context.Context, string, string, string, string) (appstore.AppStoreStatus, error)
+	fetchTestFlightStatus       func(context.Context, string, string, string, string) (appstore.TestFlightStatus, error)
+	planAppStoreSubmission      func(context.Context, string, string, string, string, appstore.SubmitOptions) (appstore.AppStoreReleasePlan, error)
+	applyAppStoreSubmission     func(context.Context, appstore.AppStoreReleasePlan) error
+	planAppStoreRelease         func(context.Context, string, string, string, string) (appstore.AppStoreReleasePlan, error)
+	applyAppStoreRelease        func(context.Context, appstore.AppStoreReleasePlan) error
+	planTestFlightDistribution  func(context.Context, string, string, string, string, appstore.TestFlightDistributionOptions) (appstore.TestFlightDistributionPlan, error)
+	applyTestFlightDistribution func(context.Context, appstore.TestFlightDistributionPlan) error
+}
+
+func (m mockStoreClient) PlanTestFlightDistribution(ctx context.Context, appID, bundleID, platform, version string, options appstore.TestFlightDistributionOptions) (appstore.TestFlightDistributionPlan, error) {
+	if m.planTestFlightDistribution == nil {
+		return appstore.TestFlightDistributionPlan{}, errors.New("PlanTestFlightDistribution should not be called")
+	}
+	return m.planTestFlightDistribution(ctx, appID, bundleID, platform, version, options)
+}
+
+func (m mockStoreClient) ApplyTestFlightDistribution(ctx context.Context, plan appstore.TestFlightDistributionPlan) error {
+	if m.applyTestFlightDistribution == nil {
+		return errors.New("ApplyTestFlightDistribution should not be called")
+	}
+	return m.applyTestFlightDistribution(ctx, plan)
 }
 
 func (m mockStoreClient) PlanAppStoreSubmission(ctx context.Context, appID, bundleID, platform, version string, options appstore.SubmitOptions) (appstore.AppStoreReleasePlan, error) {
@@ -176,6 +193,57 @@ func TestRunTestFlightStatusHumanReadable(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("output = %q, missing %q", stdout.String(), want)
 		}
+	}
+}
+
+func TestRunTestFlightDistributeDryRunPassesRepeatedGroups(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	if err := config.Save(path, config.New("app-1", "com.example.app", "IOS", "1.2.0", []string{"en-US"})); err != nil {
+		t.Fatal(err)
+	}
+	client := mockStoreClient{planTestFlightDistribution: func(_ context.Context, _, _, _, _ string, options appstore.TestFlightDistributionOptions) (appstore.TestFlightDistributionPlan, error) {
+		if options.BuildVersion != "42" || !slices.Equal(options.GroupNames, []string{"Team", "Public"}) {
+			t.Fatalf("options = %#v", options)
+		}
+		return appstore.TestFlightDistributionPlan{Kind: "testflight-distribute", Platform: "IOS", Version: "1.2.0", Build: "42", Groups: []appstore.TestFlightGroup{{Name: "Public"}, {Name: "Team", Internal: true}}, Operations: []appstore.ReleaseOperation{{Action: "attach", Resource: "beta-group:Public", Description: "Attach build 42 to beta group Public"}}}, nil
+	}}
+	environment, stdout, _ := testEnvironment(client)
+	err := runWithEnvironment(context.Background(), []string{"testflight", "distribute", "--config", path, "--build", "42", "--group", "Team", "--group", "Public", "--dry-run"}, environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Public (external, pending)") || !strings.Contains(stdout.String(), "Dry run") {
+		t.Fatalf("output = %q", stdout.String())
+	}
+}
+
+func TestRunTestFlightDistributeRequiresVersionConfirmation(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	if err := config.Save(path, config.New("app-1", "com.example.app", "IOS", "1.2.0", []string{"en-US"})); err != nil {
+		t.Fatal(err)
+	}
+	applied := 0
+	client := mockStoreClient{
+		planTestFlightDistribution: func(_ context.Context, _, _, _, _ string, _ appstore.TestFlightDistributionOptions) (appstore.TestFlightDistributionPlan, error) {
+			return appstore.TestFlightDistributionPlan{Kind: "testflight-distribute", Platform: "IOS", Version: "1.2.0", Build: "42", Groups: []appstore.TestFlightGroup{{Name: "Team", Internal: true}}, Operations: []appstore.ReleaseOperation{{Action: "attach", Resource: "beta-group:Team"}}}, nil
+		},
+		applyTestFlightDistribution: func(_ context.Context, _ appstore.TestFlightDistributionPlan) error { applied++; return nil },
+	}
+	environment, _, _ := testEnvironment(client)
+	base := []string{"testflight", "distribute", "--config", path, "--group", "Team"}
+	if err := runWithEnvironment(context.Background(), base, environment); err == nil || !strings.Contains(err.Error(), "--confirm 1.2.0") {
+		t.Fatalf("error = %v", err)
+	}
+	if applied != 0 {
+		t.Fatal("distribution applied without confirmation")
+	}
+	if err := runWithEnvironment(context.Background(), append(base, "--confirm", "1.2.0"), environment); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Fatalf("apply calls = %d", applied)
 	}
 }
 

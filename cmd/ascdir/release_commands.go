@@ -181,13 +181,24 @@ func printReleasePlan(writer io.Writer, plan appstore.AppStoreReleasePlan) {
 }
 
 func runTestFlight(ctx context.Context, args []string, environment commandEnvironment) error {
-	if len(args) == 0 || args[0] != "status" {
-		return errors.New("usage: ascdir testflight status [--config ascdir.yaml] [--json]")
+	if len(args) == 0 {
+		return errors.New("usage: ascdir testflight <status|distribute>")
 	}
+	switch args[0] {
+	case "status":
+		return runTestFlightStatus(ctx, args[1:], environment)
+	case "distribute":
+		return runTestFlightDistribute(ctx, args[1:], environment)
+	default:
+		return errors.New("usage: ascdir testflight <status|distribute>")
+	}
+}
+
+func runTestFlightStatus(ctx context.Context, args []string, environment commandEnvironment) error {
 	fs := flag.NewFlagSet("testflight status", flag.ContinueOnError)
 	configPath := fs.String("config", "ascdir.yaml", "configuration file")
 	jsonOutput := fs.Bool("json", false, "write machine-readable JSON")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if err := requireNoArgs(fs); err != nil {
@@ -221,6 +232,87 @@ func runTestFlight(ctx context.Context, args []string, environment commandEnviro
 		fmt.Fprintf(environment.stdout, "- %s: %s%s\n", build.Version, displayValue(build.ProcessingState), expired)
 	}
 	return nil
+}
+
+type repeatedStringFlag []string
+
+func (values *repeatedStringFlag) String() string { return strings.Join(*values, ", ") }
+
+func (values *repeatedStringFlag) Set(value string) error {
+	*values = append(*values, value)
+	return nil
+}
+
+func runTestFlightDistribute(ctx context.Context, args []string, environment commandEnvironment) error {
+	fs := flag.NewFlagSet("testflight distribute", flag.ContinueOnError)
+	configPath := fs.String("config", "ascdir.yaml", "configuration file")
+	build := fs.String("build", "", "build number (defaults to the newest eligible build)")
+	var groups repeatedStringFlag
+	fs.Var(&groups, "group", "existing TestFlight beta group name (repeat for multiple groups)")
+	dryRun := fs.Bool("dry-run", false, "validate and show the distribution plan without changing App Store Connect")
+	confirm := fs.String("confirm", "", "confirm distribution by repeating the configured version")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(fs); err != nil {
+		return err
+	}
+	if *dryRun && *confirm != "" {
+		return errors.New("--dry-run and --confirm cannot be used together")
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	client, err := environment.newClient()
+	if err != nil {
+		return err
+	}
+	plan, err := client.PlanTestFlightDistribution(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version, appstore.TestFlightDistributionOptions{BuildVersion: strings.TrimSpace(*build), GroupNames: groups})
+	if err != nil {
+		return err
+	}
+	printTestFlightDistributionPlan(environment.stdout, plan)
+	if len(plan.Operations) == 0 {
+		fmt.Fprintln(environment.stdout, "No remaining operations: the build is attached to the requested groups.")
+		if plan.BetaReviewState != "" && plan.BetaReviewState != "APPROVED" {
+			fmt.Fprintf(environment.stdout, "External testing remains subject to Beta App Review (%s).\n", plan.BetaReviewState)
+		}
+		return nil
+	}
+	if *dryRun {
+		fmt.Fprintf(environment.stdout, "Dry run: %d operation(s) validated and not applied.\n", len(plan.Operations))
+		return nil
+	}
+	if *confirm != cfg.App.Version {
+		return fmt.Errorf("distribution grants testers access to a build; review with --dry-run and rerun with --confirm %s", cfg.App.Version)
+	}
+	if err := client.ApplyTestFlightDistribution(ctx, plan); err != nil {
+		return err
+	}
+	fmt.Fprintf(environment.stdout, "Distributed TestFlight %s %s (build %s) to %d group(s).\n", cfg.App.Platform, cfg.App.Version, plan.Build, len(plan.Groups))
+	return nil
+}
+
+func printTestFlightDistributionPlan(writer io.Writer, plan appstore.TestFlightDistributionPlan) {
+	fmt.Fprintf(writer, "testflight-distribute %s %s (build %s)\n", plan.Platform, plan.Version, plan.Build)
+	for _, group := range plan.Groups {
+		typeName := "external"
+		if group.Internal {
+			typeName = "internal"
+		}
+		state := "pending"
+		if group.Attached {
+			state = "attached"
+		}
+		fmt.Fprintf(writer, "- %s (%s, %s)\n", group.Name, typeName, state)
+	}
+	if plan.BetaReviewState != "" {
+		fmt.Fprintf(writer, "Beta App Review: %s\n", plan.BetaReviewState)
+	}
+	for index, operation := range plan.Operations {
+		fmt.Fprintf(writer, "%d. %s\n", index+1, operation.Description)
+	}
 }
 
 func writeJSON(writer io.Writer, value any) error {
