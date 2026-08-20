@@ -19,6 +19,7 @@ type BuildStatus struct {
 	UploadedDate    string `json:"uploaded_date,omitempty"`
 	ExpirationDate  string `json:"expiration_date,omitempty"`
 	ProcessingState string `json:"processing_state,omitempty"`
+	AudienceType    string `json:"audience_type,omitempty"`
 	Expired         bool   `json:"expired"`
 }
 
@@ -117,7 +118,7 @@ func (c *Client) FetchAppStoreStatus(ctx context.Context, appID, bundleID, platf
 	}
 
 	var buildResponse nullableRelationshipResponse
-	buildPath := "/v1/appStoreVersions/" + url.PathEscape(remoteVersion.ID) + "/build?fields%5Bbuilds%5D=version,uploadedDate,expirationDate,processingState,expired"
+	buildPath := "/v1/appStoreVersions/" + url.PathEscape(remoteVersion.ID) + "/build?fields%5Bbuilds%5D=version,uploadedDate,expirationDate,processingState,buildAudienceType,expired"
 	if err := c.doJSON(ctx, http.MethodGet, buildPath, nil, &buildResponse); err != nil {
 		return AppStoreStatus{}, fmt.Errorf("read build for version %s: %w", version, err)
 	}
@@ -158,7 +159,7 @@ func (c *Client) FetchTestFlightStatus(ctx context.Context, appID, bundleID, pla
 	if len(preReleaseVersions) > 1 {
 		return TestFlightStatus{}, fmt.Errorf("multiple prerelease versions matched %s for platform %s", version, platform)
 	}
-	path := "/v1/preReleaseVersions/" + url.PathEscape(preReleaseVersions[0].ID) + "/builds?fields%5Bbuilds%5D=version,uploadedDate,expirationDate,processingState,expired&limit=200"
+	path := "/v1/preReleaseVersions/" + url.PathEscape(preReleaseVersions[0].ID) + "/builds?fields%5Bbuilds%5D=version,uploadedDate,expirationDate,processingState,buildAudienceType,expired&limit=200"
 	resources, err := c.list(ctx, path)
 	if err != nil {
 		return TestFlightStatus{}, err
@@ -492,7 +493,7 @@ func (c *Client) fetchTestFlightBuilds(ctx context.Context, appID, platform, ver
 	if match == nil {
 		return []BuildStatus{}, nil
 	}
-	items, err = c.list(ctx, "/v1/preReleaseVersions/"+url.PathEscape(match.ID)+"/builds?fields%5Bbuilds%5D=version,uploadedDate,expirationDate,processingState,expired&limit=200")
+	items, err = c.list(ctx, "/v1/preReleaseVersions/"+url.PathEscape(match.ID)+"/builds?fields%5Bbuilds%5D=version,uploadedDate,expirationDate,processingState,buildAudienceType,expired&limit=200")
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +517,7 @@ func (c *Client) fetchTestFlightBuilds(ctx context.Context, appID, platform, ver
 
 func (c *Client) fetchVersionBuild(ctx context.Context, versionID string) (*BuildStatus, error) {
 	var response nullableRelationshipResponse
-	if err := c.doJSON(ctx, http.MethodGet, "/v1/appStoreVersions/"+url.PathEscape(versionID)+"/build?fields%5Bbuilds%5D=version,uploadedDate,expirationDate,processingState,expired", nil, &response); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/appStoreVersions/"+url.PathEscape(versionID)+"/build?fields%5Bbuilds%5D=version,uploadedDate,expirationDate,processingState,buildAudienceType,expired", nil, &response); err != nil {
 		return nil, fmt.Errorf("read selected build: %w", err)
 	}
 	if response.Data == nil {
@@ -609,7 +610,7 @@ func displayState(state string) string {
 func buildStatus(item resource) BuildStatus {
 	return BuildStatus{
 		ID: item.ID, Version: stringAttribute(item, "version"), UploadedDate: stringAttribute(item, "uploadedDate"),
-		ExpirationDate: stringAttribute(item, "expirationDate"), ProcessingState: stringAttribute(item, "processingState"),
+		ExpirationDate: stringAttribute(item, "expirationDate"), ProcessingState: stringAttribute(item, "processingState"), AudienceType: stringAttribute(item, "buildAudienceType"),
 		Expired: boolAttribute(item, "expired"),
 	}
 }

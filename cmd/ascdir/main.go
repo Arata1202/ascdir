@@ -40,6 +40,8 @@ type storeClient interface {
 	ApplyAppStoreSubmission(context.Context, appstore.AppStoreReleasePlan) error
 	PlanAppStoreRelease(context.Context, string, string, string, string) (appstore.AppStoreReleasePlan, error)
 	ApplyAppStoreRelease(context.Context, appstore.AppStoreReleasePlan) error
+	PlanTestFlightDistribution(context.Context, string, string, string, string, appstore.TestFlightDistributionOptions) (appstore.TestFlightDistributionPlan, error)
+	ApplyTestFlightDistribution(context.Context, appstore.TestFlightDistributionPlan) error
 }
 
 type commandEnvironment struct {
@@ -149,6 +151,7 @@ Usage:
   ascdir app-store submit  [--config ascdir.yaml] [--build NUMBER] [--release-type TYPE] [--earliest-release-date RFC3339] [--dry-run | --confirm VERSION]
   ascdir app-store release [--config ascdir.yaml] [--dry-run | --confirm VERSION]
   ascdir testflight status [--config ascdir.yaml] [--json]
+  ascdir testflight distribute --group NAME [--group NAME...] [--build NUMBER] [--config ascdir.yaml] [--dry-run | --confirm VERSION]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
 

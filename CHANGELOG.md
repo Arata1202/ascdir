@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Add read-only `app-store status` and `testflight status` commands with stable JSON output for release automation.
 - Add planned, explicitly confirmed App Store submission and manual-release commands with retry-safe state detection.
+- Add idempotent TestFlight distribution to existing internal and external groups, including Beta App Review submission when required.
 
 ## [1.1.4] - 2026-08-19
 

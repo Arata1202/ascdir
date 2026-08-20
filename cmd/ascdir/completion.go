@@ -38,7 +38,7 @@ const bashCompletion = `_ascdir() {
   elif [[ ${previous} == "app-store" ]]; then
     COMPREPLY=($(compgen -W "status submit release" -- "${current}"))
   elif [[ ${previous} == "testflight" ]]; then
-    COMPREPLY=($(compgen -W "status" -- "${current}"))
+    COMPREPLY=($(compgen -W "status distribute" -- "${current}"))
   elif [[ ${previous} == "completion" ]]; then
     COMPREPLY=($(compgen -W "bash zsh fish powershell" -- "${current}"))
   elif [[ ${current} == -* ]]; then
@@ -49,7 +49,7 @@ const bashCompletion = `_ascdir() {
       check) COMPREPLY=($(compgen -W "--config" -- "${current}")) ;;
       price-points) COMPREPLY=($(compgen -W "--config --territory" -- "${current}")) ;;
       app-store) COMPREPLY=($(compgen -W "--config --json --build --release-type --earliest-release-date --dry-run --confirm" -- "${current}")) ;;
-      testflight) COMPREPLY=($(compgen -W "--config --json" -- "${current}")) ;;
+      testflight) COMPREPLY=($(compgen -W "--config --json --group --build --dry-run --confirm" -- "${current}")) ;;
     esac
   fi
 }
@@ -63,7 +63,7 @@ _ascdir() {
   commands=(auth init pull push check price-points app-store testflight completion version help)
   auth_commands=(login check logout)
 	app_store_commands=(status submit release)
-  status_commands=(status)
+	status_commands=(status distribute)
   shells=(bash zsh fish powershell)
   if (( CURRENT == 2 )); then
     _describe 'command' commands
@@ -83,7 +83,7 @@ _ascdir() {
       check) _values 'option' --config ;;
       price-points) _values 'option' --config --territory ;;
 	  app-store) _values 'option' --config --json --build --release-type --earliest-release-date --dry-run --confirm ;;
-	  testflight) _values 'option' --config --json ;;
+	  testflight) _values 'option' --config --json --group --build --dry-run --confirm ;;
       *) _files ;;
     esac
   fi
@@ -96,7 +96,7 @@ const fishCompletion = `complete -c ascdir -f
 complete -c ascdir -n '__fish_use_subcommand' -a 'auth init pull push check price-points app-store testflight completion version help'
 complete -c ascdir -n '__fish_seen_subcommand_from auth' -a 'login check logout'
 complete -c ascdir -n '__fish_seen_subcommand_from app-store' -a 'status submit release'
-complete -c ascdir -n '__fish_seen_subcommand_from testflight' -a 'status'
+complete -c ascdir -n '__fish_seen_subcommand_from testflight' -a 'status distribute'
 complete -c ascdir -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell'
 complete -c ascdir -n '__fish_seen_subcommand_from init' -l bundle-id -r
 complete -c ascdir -n '__fish_seen_subcommand_from init' -l version -r
@@ -107,6 +107,10 @@ complete -c ascdir -n '__fish_seen_subcommand_from price-points' -l config -r
 complete -c ascdir -n '__fish_seen_subcommand_from price-points' -l territory -r
 complete -c ascdir -n '__fish_seen_subcommand_from app-store testflight' -l config -r
 complete -c ascdir -n '__fish_seen_subcommand_from app-store testflight' -l json
+complete -c ascdir -n '__fish_seen_subcommand_from testflight' -l group -r
+complete -c ascdir -n '__fish_seen_subcommand_from testflight' -l build -r
+complete -c ascdir -n '__fish_seen_subcommand_from testflight' -l dry-run
+complete -c ascdir -n '__fish_seen_subcommand_from testflight' -l confirm -r
 complete -c ascdir -n '__fish_seen_subcommand_from app-store' -l build -r
 complete -c ascdir -n '__fish_seen_subcommand_from app-store' -l release-type -r -a 'MANUAL AFTER_APPROVAL SCHEDULED'
 complete -c ascdir -n '__fish_seen_subcommand_from app-store' -l earliest-release-date -r
@@ -134,7 +138,7 @@ const powershellCompletion = `Register-ArgumentCompleter -Native -CommandName as
   } elseif ($elements[1].Value -eq 'app-store' -and $elements.Count -le 3) {
 	'status','submit','release'
   } elseif ($elements[1].Value -eq 'testflight' -and $elements.Count -le 3) {
-    'status'
+	'status','distribute'
   } elseif ($elements[1].Value -eq 'init') {
     '--bundle-id','--version','--platform','--locale','--config','--force'
   } elseif ($elements[1].Value -eq 'pull') {
@@ -148,7 +152,7 @@ const powershellCompletion = `Register-ArgumentCompleter -Native -CommandName as
   } elseif ($elements[1].Value -eq 'app-store') {
 	'--config','--json','--build','--release-type','--earliest-release-date','--dry-run','--confirm'
   } elseif ($elements[1].Value -eq 'testflight') {
-	'--config','--json'
+	'--config','--json','--group','--build','--dry-run','--confirm'
   } else { @() }
   $candidates | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
