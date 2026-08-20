@@ -36,6 +36,10 @@ type storeClient interface {
 	ListPricePoints(context.Context, string, string) ([]appstore.PricePoint, error)
 	FetchAppStoreStatus(context.Context, string, string, string, string) (appstore.AppStoreStatus, error)
 	FetchTestFlightStatus(context.Context, string, string, string, string) (appstore.TestFlightStatus, error)
+	PlanAppStoreSubmission(context.Context, string, string, string, string, appstore.SubmitOptions) (appstore.AppStoreReleasePlan, error)
+	ApplyAppStoreSubmission(context.Context, appstore.AppStoreReleasePlan) error
+	PlanAppStoreRelease(context.Context, string, string, string, string) (appstore.AppStoreReleasePlan, error)
+	ApplyAppStoreRelease(context.Context, appstore.AppStoreReleasePlan) error
 }
 
 type commandEnvironment struct {
@@ -141,7 +145,9 @@ Usage:
   ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions] [--allow-availability-changes] [--allow-commercial-changes]
   ascdir check [--config ascdir.yaml]
   ascdir price-points --territory USA [--config ascdir.yaml]
-  ascdir app-store status [--config ascdir.yaml] [--json]
+  ascdir app-store status  [--config ascdir.yaml] [--json]
+  ascdir app-store submit  [--config ascdir.yaml] [--build NUMBER] [--release-type TYPE] [--earliest-release-date RFC3339] [--dry-run | --confirm VERSION]
+  ascdir app-store release [--config ascdir.yaml] [--dry-run | --confirm VERSION]
   ascdir testflight status [--config ascdir.yaml] [--json]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
