@@ -650,6 +650,29 @@ func TestRetryDelayHonorsReasonableRetryAfter(t *testing.T) {
 	}
 }
 
+func TestMutationRetryPolicy(t *testing.T) {
+	t.Parallel()
+
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPatch} {
+		if !methodRetryable(method) {
+			t.Fatalf("%s should be retryable", method)
+		}
+		if !statusRetryable(method, http.StatusTooManyRequests) {
+			t.Fatalf("%s should retry a rate-limit response", method)
+		}
+	}
+	for _, method := range []string{http.MethodPost, http.MethodDelete} {
+		if methodRetryable(method) {
+			t.Fatalf("%s must not be retried after an ambiguous transport failure", method)
+		}
+		for _, status := range []int{http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+			if statusRetryable(method, status) {
+				t.Fatalf("%s must not retry status %d", method, status)
+			}
+		}
+	}
+}
+
 func testClient(t *testing.T, baseURL string) *Client {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

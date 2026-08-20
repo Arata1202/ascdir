@@ -853,17 +853,18 @@ func (c *Client) resolveURL(path string) (string, error) {
 }
 
 func methodRetryable(method string) bool {
+	// GET and HEAD are safe to repeat. PATCH is idempotent for every ascdir
+	// request because it only assigns an explicit desired value. POST and
+	// DELETE can create or remove resources and must never be retried after an
+	// ambiguous transport failure.
 	return method == http.MethodGet || method == http.MethodHead || method == http.MethodPatch
 }
 
 func statusRetryable(method string, status int) bool {
-	if status == http.StatusTooManyRequests {
-		return true
-	}
 	if !methodRetryable(method) {
 		return false
 	}
-	return status == http.StatusInternalServerError || status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
+	return status == http.StatusTooManyRequests || status == http.StatusInternalServerError || status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout
 }
 
 func retryDelay(attempt int, retryAfter string, now time.Time) time.Duration {
