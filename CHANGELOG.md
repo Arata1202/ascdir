@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-20
+
+### Fixed
+
+- Accept GoReleaser's documented `CHANGELOG.md`, `LICENSE`, and `README.md`
+  archive files while continuing to reject unexpected paths and non-regular
+  executable payloads in the checksum-verifying installer.
+
 ## [1.2.0] - 2026-08-20
 
 ### Added
@@ -126,7 +134,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Install verified release archives with the macOS and Linux installer
 - Retry safe requests after rate limits and transient server failures
 
-[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/Arata1202/ascdir/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Arata1202/ascdir/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/Arata1202/ascdir/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/Arata1202/ascdir/compare/v1.1.2...v1.1.3

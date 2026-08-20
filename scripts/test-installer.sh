@@ -65,7 +65,10 @@ cat > "${payload_dir}/ascdir" <<'EOF'
 echo "ascdir v9.9.9"
 EOF
 chmod +x "${payload_dir}/ascdir"
-tar -czf "${fixture_dir}/${archive}" -C "$payload_dir" ascdir
+printf '%s\n' changelog > "${payload_dir}/CHANGELOG.md"
+printf '%s\n' license > "${payload_dir}/LICENSE"
+printf '%s\n' readme > "${payload_dir}/README.md"
+tar -czf "${fixture_dir}/${archive}" -C "$payload_dir" CHANGELOG.md LICENSE README.md ascdir
 write_checksum "$archive"
 
 PATH="${fake_bin}:${PATH}" \
