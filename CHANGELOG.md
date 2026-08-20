@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-20
+
 ### Added
 
 - Add read-only `app-store status` and `testflight status` commands with stable JSON output for release automation.
@@ -124,7 +126,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Install verified release archives with the macOS and Linux installer
 - Retry safe requests after rate limits and transient server failures
 
-[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/Arata1202/ascdir/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Arata1202/ascdir/compare/v1.1.4...v1.2.0
 [1.1.4]: https://github.com/Arata1202/ascdir/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/Arata1202/ascdir/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/Arata1202/ascdir/compare/v1.1.1...v1.1.2
