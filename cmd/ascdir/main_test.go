@@ -25,13 +25,45 @@ import (
 )
 
 type mockStoreClient struct {
-	checkAuth             func(context.Context) error
-	fetchMetadata         func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
-	applyMetadata         func(context.Context, appstore.Metadata, []string, []appstore.Change) error
-	listPricePoints       func(context.Context, string, string) ([]appstore.PricePoint, error)
-	resolveAppID          func(context.Context, string, string) (string, error)
-	fetchAppStoreStatus   func(context.Context, string, string, string, string) (appstore.AppStoreStatus, error)
-	fetchTestFlightStatus func(context.Context, string, string, string, string) (appstore.TestFlightStatus, error)
+	checkAuth               func(context.Context) error
+	fetchMetadata           func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
+	applyMetadata           func(context.Context, appstore.Metadata, []string, []appstore.Change) error
+	listPricePoints         func(context.Context, string, string) ([]appstore.PricePoint, error)
+	resolveAppID            func(context.Context, string, string) (string, error)
+	fetchAppStoreStatus     func(context.Context, string, string, string, string) (appstore.AppStoreStatus, error)
+	fetchTestFlightStatus   func(context.Context, string, string, string, string) (appstore.TestFlightStatus, error)
+	planAppStoreSubmission  func(context.Context, string, string, string, string, appstore.SubmitOptions) (appstore.AppStoreReleasePlan, error)
+	applyAppStoreSubmission func(context.Context, appstore.AppStoreReleasePlan) error
+	planAppStoreRelease     func(context.Context, string, string, string, string) (appstore.AppStoreReleasePlan, error)
+	applyAppStoreRelease    func(context.Context, appstore.AppStoreReleasePlan) error
+}
+
+func (m mockStoreClient) PlanAppStoreSubmission(ctx context.Context, appID, bundleID, platform, version string, options appstore.SubmitOptions) (appstore.AppStoreReleasePlan, error) {
+	if m.planAppStoreSubmission == nil {
+		return appstore.AppStoreReleasePlan{}, errors.New("PlanAppStoreSubmission should not be called")
+	}
+	return m.planAppStoreSubmission(ctx, appID, bundleID, platform, version, options)
+}
+
+func (m mockStoreClient) ApplyAppStoreSubmission(ctx context.Context, plan appstore.AppStoreReleasePlan) error {
+	if m.applyAppStoreSubmission == nil {
+		return errors.New("ApplyAppStoreSubmission should not be called")
+	}
+	return m.applyAppStoreSubmission(ctx, plan)
+}
+
+func (m mockStoreClient) PlanAppStoreRelease(ctx context.Context, appID, bundleID, platform, version string) (appstore.AppStoreReleasePlan, error) {
+	if m.planAppStoreRelease == nil {
+		return appstore.AppStoreReleasePlan{}, errors.New("PlanAppStoreRelease should not be called")
+	}
+	return m.planAppStoreRelease(ctx, appID, bundleID, platform, version)
+}
+
+func (m mockStoreClient) ApplyAppStoreRelease(ctx context.Context, plan appstore.AppStoreReleasePlan) error {
+	if m.applyAppStoreRelease == nil {
+		return errors.New("ApplyAppStoreRelease should not be called")
+	}
+	return m.applyAppStoreRelease(ctx, plan)
 }
 
 func (m mockStoreClient) FetchAppStoreStatus(ctx context.Context, appID, bundleID, platform, version string) (appstore.AppStoreStatus, error) {
@@ -144,6 +176,89 @@ func TestRunTestFlightStatusHumanReadable(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("output = %q, missing %q", stdout.String(), want)
 		}
+	}
+}
+
+func TestRunAppStoreSubmitDryRunUsesExecutionPlanWithoutApplying(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	if err := config.Save(path, config.New("app-1", "com.example.app", "IOS", "1.2.0", []string{"en-US"})); err != nil {
+		t.Fatal(err)
+	}
+	client := mockStoreClient{planAppStoreSubmission: func(_ context.Context, _, _, _, _ string, options appstore.SubmitOptions) (appstore.AppStoreReleasePlan, error) {
+		if options.BuildVersion != "42" || options.ReleaseType != "" {
+			t.Fatalf("options = %#v", options)
+		}
+		return appstore.AppStoreReleasePlan{Kind: "app-store-submit", Platform: "IOS", Version: "1.2.0", Build: "42", Operations: []appstore.ReleaseOperation{{Action: "submit", Resource: "review-submission", Description: "Submit for App Review"}}}, nil
+	}}
+	environment, stdout, _ := testEnvironment(client)
+	err := runWithEnvironment(context.Background(), []string{"app-store", "submit", "--config", path, "--build", "42", "--dry-run"}, environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Submit for App Review") || !strings.Contains(stdout.String(), "Dry run") {
+		t.Fatalf("output = %q", stdout.String())
+	}
+}
+
+func TestRunAppStoreSubmitRequiresVersionBoundConfirmation(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	if err := config.Save(path, config.New("app-1", "com.example.app", "IOS", "1.2.0", []string{"en-US"})); err != nil {
+		t.Fatal(err)
+	}
+	applied := 0
+	client := mockStoreClient{
+		planAppStoreSubmission: func(_ context.Context, _, _, _, _ string, _ appstore.SubmitOptions) (appstore.AppStoreReleasePlan, error) {
+			return appstore.AppStoreReleasePlan{Kind: "app-store-submit", Platform: "IOS", Version: "1.2.0", Build: "42", Operations: []appstore.ReleaseOperation{{Action: "submit", Resource: "review-submission", Description: "Submit for App Review"}}}, nil
+		},
+		applyAppStoreSubmission: func(_ context.Context, _ appstore.AppStoreReleasePlan) error { applied++; return nil },
+	}
+	environment, _, _ := testEnvironment(client)
+	base := []string{"app-store", "submit", "--config", path}
+	if err := runWithEnvironment(context.Background(), base, environment); err == nil || !strings.Contains(err.Error(), "--confirm 1.2.0") {
+		t.Fatalf("error = %v", err)
+	}
+	if err := runWithEnvironment(context.Background(), append(base, "--confirm", "wrong"), environment); err == nil {
+		t.Fatal("wrong confirmation succeeded")
+	}
+	if applied != 0 {
+		t.Fatalf("applied before confirmation: %d", applied)
+	}
+	if err := runWithEnvironment(context.Background(), append(base, "--confirm", "1.2.0"), environment); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Fatalf("apply calls = %d", applied)
+	}
+}
+
+func TestRunAppStoreReleaseRequiresConfirmation(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	if err := config.Save(path, config.New("app-1", "com.example.app", "IOS", "1.2.0", []string{"en-US"})); err != nil {
+		t.Fatal(err)
+	}
+	applied := 0
+	client := mockStoreClient{
+		planAppStoreRelease: func(_ context.Context, _, _, _, _ string) (appstore.AppStoreReleasePlan, error) {
+			return appstore.AppStoreReleasePlan{Kind: "app-store-release", Platform: "IOS", Version: "1.2.0", Operations: []appstore.ReleaseOperation{{Action: "release", Resource: "app-store-version", Description: "Release IOS 1.2.0"}}}, nil
+		},
+		applyAppStoreRelease: func(_ context.Context, _ appstore.AppStoreReleasePlan) error { applied++; return nil },
+	}
+	environment, _, _ := testEnvironment(client)
+	base := []string{"app-store", "release", "--config", path}
+	if err := runWithEnvironment(context.Background(), append(base, "--dry-run"), environment); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 0 {
+		t.Fatal("dry-run applied release")
+	}
+	if err := runWithEnvironment(context.Background(), append(base, "--confirm", "1.2.0"), environment); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Fatalf("apply calls = %d", applied)
 	}
 }
 

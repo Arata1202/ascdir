@@ -11,6 +11,8 @@
 - Validate common App Store character limits and URLs locally
 - Manage multiple locales from one `ascdir.yaml`
 - Authenticate with App Store Connect API keys
+- Create an App Store version, select a processed build, and submit it for review
+- Release an approved manual-release version without opening App Store Connect
 - Follow paginated responses and retry rate limits and transient failures
 - Run without telemetry or credential uploads
 
@@ -368,6 +370,36 @@ ascdir app-store status
 ascdir app-store status --json
 ```
 
+### `ascdir app-store submit`
+
+Builds a read-only plan, then converges the configured version toward submission. If the App Store version does not exist, the first confirmed run creates only that version and stops so metadata can be synchronized safely. A later run selects a valid build, creates or resumes a compatible draft Review Submission, adds the version, and submits it for App Review.
+
+Preview the exact operations first. If `--build` is omitted, ascdir selects the newest valid, unexpired build for the configured platform and version.
+
+```sh
+ascdir app-store submit --dry-run
+ascdir app-store submit --build 42 --dry-run
+```
+
+Execution requires the configured version as an explicit confirmation token:
+
+```sh
+ascdir app-store submit --build 42 --confirm 1.2.0
+```
+
+New versions default to `MANUAL`; existing versions preserve their current release setting unless `--release-type` is supplied. `AFTER_APPROVAL` releases automatically after approval. `SCHEDULED` also requires `--earliest-release-date` in RFC3339 format. Rerunning the command after submission is a no-op rather than creating a duplicate submission.
+
+### `ascdir app-store release`
+
+Requests publication of a version in `PENDING_DEVELOPER_RELEASE`. It is only valid for a manual-release version and is a no-op once release processing has started.
+
+```sh
+ascdir app-store release --dry-run
+ascdir app-store release --confirm 1.2.0
+```
+
+Review [App Store submission and release](docs/release.md) before the first production run. Build upload, signing, and archive creation remain the responsibility of Xcode, Transporter, or another build pipeline.
+
 ### `ascdir testflight status`
 
 Lists builds for the configured platform and prerelease version, newest first, without changing TestFlight. Use `--json` for machine-readable output.
@@ -391,7 +423,7 @@ See [Troubleshooting](docs/troubleshooting.md) for configuration discovery, auth
 
 ## Scope
 
-`ascdir` manages App Store Connect metadata and product-page assets and can inspect App Store and TestFlight release state. It does not upload app builds, distribute TestFlight builds, submit versions for review, or manage certificates, subscriptions, analytics, or customer reviews.
+`ascdir` manages App Store Connect metadata and product-page assets, can inspect App Store and TestFlight release state, and can submit and manually release an App Store version. It does not upload or sign app builds, distribute TestFlight builds, or manage certificates, subscriptions, analytics, or customer reviews.
 
 ## Security
 
@@ -399,6 +431,7 @@ See [Troubleshooting](docs/troubleshooting.md) for configuration discovery, auth
 - The `.p8` private key is read from the configured local path and never leaves the machine. Apple receives only the signed JWT.
 - API errors are reported without printing credentials or JWTs.
 - `push --dry-run` never sends mutation requests.
+- `app-store submit --dry-run` and `app-store release --dry-run` never send mutation requests; execution is bound to the configured version with `--confirm`.
 - Pagination links are restricted to the configured App Store Connect API origin, preventing bearer tokens from being forwarded to another host.
 - Metadata paths are confined to the configuration directory after resolving symbolic links.
 - Retried mutations are limited to idempotent updates and requests rejected by rate limiting.

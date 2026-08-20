@@ -7,18 +7,33 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/Arata1202/ascdir/internal/appstore"
 	"github.com/Arata1202/ascdir/internal/config"
 )
 
 func runAppStore(ctx context.Context, args []string, environment commandEnvironment) error {
-	if len(args) == 0 || args[0] != "status" {
-		return errors.New("usage: ascdir app-store status [--config ascdir.yaml] [--json]")
+	if len(args) == 0 {
+		return errors.New("usage: ascdir app-store <status|submit|release>")
 	}
+	switch args[0] {
+	case "status":
+		return runAppStoreStatus(ctx, args[1:], environment)
+	case "submit":
+		return runAppStoreSubmit(ctx, args[1:], environment)
+	case "release":
+		return runAppStoreRelease(ctx, args[1:], environment)
+	default:
+		return errors.New("usage: ascdir app-store <status|submit|release>")
+	}
+}
+
+func runAppStoreStatus(ctx context.Context, args []string, environment commandEnvironment) error {
 	fs := flag.NewFlagSet("app-store status", flag.ContinueOnError)
 	configPath := fs.String("config", "ascdir.yaml", "configuration file")
 	jsonOutput := fs.Bool("json", false, "write machine-readable JSON")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if err := requireNoArgs(fs); err != nil {
@@ -54,6 +69,115 @@ func runAppStore(ctx context.Context, args []string, environment commandEnvironm
 		fmt.Fprintf(environment.stdout, "Release type: %s\n", status.ReleaseType)
 	}
 	return nil
+}
+
+func runAppStoreSubmit(ctx context.Context, args []string, environment commandEnvironment) error {
+	fs := flag.NewFlagSet("app-store submit", flag.ContinueOnError)
+	configPath := fs.String("config", "ascdir.yaml", "configuration file")
+	build := fs.String("build", "", "build number (defaults to the newest eligible build)")
+	releaseType := fs.String("release-type", "", "release type (MANUAL, AFTER_APPROVAL, or SCHEDULED; preserves an existing version setting)")
+	earliestReleaseDate := fs.String("earliest-release-date", "", "earliest scheduled release date in RFC3339 format")
+	dryRun := fs.Bool("dry-run", false, "validate and show the submission plan without changing App Store Connect")
+	confirm := fs.String("confirm", "", "confirm submission by repeating the configured version")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(fs); err != nil {
+		return err
+	}
+	if *dryRun && *confirm != "" {
+		return errors.New("--dry-run and --confirm cannot be used together")
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	client, err := environment.newClient()
+	if err != nil {
+		return err
+	}
+	options := appstore.SubmitOptions{BuildVersion: strings.TrimSpace(*build), ReleaseType: strings.TrimSpace(*releaseType), EarliestReleaseDate: strings.TrimSpace(*earliestReleaseDate)}
+	plan, err := client.PlanAppStoreSubmission(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version, options)
+	if err != nil {
+		return err
+	}
+	printReleasePlan(environment.stdout, plan)
+	if len(plan.Operations) == 0 {
+		fmt.Fprintln(environment.stdout, "No changes: this version is already submitted or released.")
+		return nil
+	}
+	if *dryRun {
+		fmt.Fprintf(environment.stdout, "Dry run: %d operation(s) validated and not applied.\n", len(plan.Operations))
+		return nil
+	}
+	if *confirm != cfg.App.Version {
+		return fmt.Errorf("submission changes App Store Connect; review with --dry-run and rerun with --confirm %s", cfg.App.Version)
+	}
+	if err := client.ApplyAppStoreSubmission(ctx, plan); err != nil {
+		return err
+	}
+	if plan.Build == "" {
+		fmt.Fprintf(environment.stdout, "Created %s %s. Sync metadata with ascdir push, then rerun app-store submit.\n", cfg.App.Platform, cfg.App.Version)
+		return nil
+	}
+	fmt.Fprintf(environment.stdout, "Submitted %s %s (build %s) for App Review.\n", cfg.App.Platform, cfg.App.Version, plan.Build)
+	return nil
+}
+
+func runAppStoreRelease(ctx context.Context, args []string, environment commandEnvironment) error {
+	fs := flag.NewFlagSet("app-store release", flag.ContinueOnError)
+	configPath := fs.String("config", "ascdir.yaml", "configuration file")
+	dryRun := fs.Bool("dry-run", false, "validate and show the release plan without changing App Store Connect")
+	confirm := fs.String("confirm", "", "confirm release by repeating the configured version")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := requireNoArgs(fs); err != nil {
+		return err
+	}
+	if *dryRun && *confirm != "" {
+		return errors.New("--dry-run and --confirm cannot be used together")
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	client, err := environment.newClient()
+	if err != nil {
+		return err
+	}
+	plan, err := client.PlanAppStoreRelease(ctx, cfg.App.ID, cfg.App.BundleID, cfg.App.Platform, cfg.App.Version)
+	if err != nil {
+		return err
+	}
+	printReleasePlan(environment.stdout, plan)
+	if len(plan.Operations) == 0 {
+		fmt.Fprintln(environment.stdout, "No changes: this version is already released or being processed.")
+		return nil
+	}
+	if *dryRun {
+		fmt.Fprintf(environment.stdout, "Dry run: %d operation(s) validated and not applied.\n", len(plan.Operations))
+		return nil
+	}
+	if *confirm != cfg.App.Version {
+		return fmt.Errorf("release makes the approved version available to customers; review with --dry-run and rerun with --confirm %s", cfg.App.Version)
+	}
+	if err := client.ApplyAppStoreRelease(ctx, plan); err != nil {
+		return err
+	}
+	fmt.Fprintf(environment.stdout, "Requested release of %s %s.\n", cfg.App.Platform, cfg.App.Version)
+	return nil
+}
+
+func printReleasePlan(writer io.Writer, plan appstore.AppStoreReleasePlan) {
+	fmt.Fprintf(writer, "%s %s %s", plan.Kind, plan.Platform, plan.Version)
+	if plan.Build != "" {
+		fmt.Fprintf(writer, " (build %s)", plan.Build)
+	}
+	fmt.Fprintln(writer)
+	for index, operation := range plan.Operations {
+		fmt.Fprintf(writer, "%d. %s\n", index+1, operation.Description)
+	}
 }
 
 func runTestFlight(ctx context.Context, args []string, environment commandEnvironment) error {
