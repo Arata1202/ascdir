@@ -1,16 +1,11 @@
 # ascdir
 
 `ascdir` makes recurring App Store release workflows reviewable. It manages
-App Store Connect metadata and product-page assets as files, previews every
-remote change, distributes processed builds through TestFlight, and submits
-versions for App Review.
+App Store Connect metadata and product-page assets as files, previews changes
+before applying them, distributes processed builds through TestFlight, and
+submits versions for App Review.
 
 ![ascdir dry-run workflows](docs/assets/ascdir-demo.gif)
-
-Long-form text uses a `.md` extension for convenient GitHub review, but App
-Store product pages do not render Markdown syntax. Builds, signing, and binary
-uploads remain with Xcode or an existing build pipeline; ascdir takes over once
-App Store Connect has processed a build.
 
 ## Features
 
