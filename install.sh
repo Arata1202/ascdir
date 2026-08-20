@@ -58,22 +58,22 @@ fi
 
 entries_file="${temporary_dir}/archive-entries.txt"
 tar -tzf "${temporary_dir}/${archive}" > "$entries_file"
-entry_count=0
+binary_count=0
 while IFS= read -r entry; do
-  entry_count=$((entry_count + 1))
   case "$entry" in
-    "$binary"|"./$binary") ;;
+    "$binary"|"./$binary") binary_count=$((binary_count + 1)) ;;
+    "CHANGELOG.md"|"./CHANGELOG.md"|"LICENSE"|"./LICENSE"|"README.md"|"./README.md") ;;
     *)
       echo "archive contains an unexpected path: ${entry}" >&2
       exit 1
       ;;
   esac
 done < "$entries_file"
-if [ "$entry_count" -ne 1 ]; then
+if [ "$binary_count" -ne 1 ]; then
   echo "archive must contain exactly one ${binary} executable" >&2
   exit 1
 fi
-entry_type="$(tar -tvzf "${temporary_dir}/${archive}" | awk 'NR == 1 { print substr($1, 1, 1) }')"
+entry_type="$(tar -tvzf "${temporary_dir}/${archive}" | awk -v binary="$binary" '$NF == binary || $NF == "./" binary { print substr($1, 1, 1); exit }')"
 if [ "$entry_type" != "-" ]; then
   echo "archive entry for ${binary} must be a regular file" >&2
   exit 1
