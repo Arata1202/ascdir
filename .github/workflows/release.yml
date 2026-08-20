@@ -11,6 +11,7 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -22,6 +23,10 @@ jobs:
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
       - run: go mod verify
+      - name: Verify module files are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
       - run: go test -race -shuffle=on -coverprofile=coverage.out -covermode=atomic ./...
       - name: Enforce coverage threshold
         run: |
@@ -47,6 +52,7 @@ jobs:
   goreleaser:
     needs: quality
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: write
       id-token: write
