@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Add read-only `app-store status` and `testflight status` commands with stable JSON output for release automation.
+
 ## [1.1.4] - 2026-08-19
 
 ### Added

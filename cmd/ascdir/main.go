@@ -34,6 +34,8 @@ type storeClient interface {
 	FetchMetadata(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
 	ApplyMetadata(context.Context, appstore.Metadata, []string, []appstore.Change) error
 	ListPricePoints(context.Context, string, string) ([]appstore.PricePoint, error)
+	FetchAppStoreStatus(context.Context, string, string, string, string) (appstore.AppStoreStatus, error)
+	FetchTestFlightStatus(context.Context, string, string, string, string) (appstore.TestFlightStatus, error)
 }
 
 type commandEnvironment struct {
@@ -97,6 +99,10 @@ func runWithEnvironment(ctx context.Context, args []string, environment commandE
 		return runPricePoints(ctx, args[1:], environment)
 	case "completion":
 		return runCompletion(args[1:], environment.stdout)
+	case "app-store":
+		return runAppStore(ctx, args[1:], environment)
+	case "testflight":
+		return runTestFlight(ctx, args[1:], environment)
 	default:
 		return fmt.Errorf("unknown command %q; run 'ascdir help'", args[0])
 	}
@@ -135,6 +141,8 @@ Usage:
   ascdir push  [--config ascdir.yaml] [--dry-run] [--allow-empty] [--allow-irreversible] [--allow-asset-deletions] [--allow-availability-changes] [--allow-commercial-changes]
   ascdir check [--config ascdir.yaml]
   ascdir price-points --territory USA [--config ascdir.yaml]
+  ascdir app-store status [--config ascdir.yaml] [--json]
+  ascdir testflight status [--config ascdir.yaml] [--json]
   ascdir completion <bash|zsh|fish|powershell>
   ascdir version
 

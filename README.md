@@ -359,6 +359,24 @@ App Store Connect does not provide transactions across resource types. ascdir va
 
 Checks the configuration, required files, common character limits, and HTTP(S) URLs without contacting App Store Connect.
 
+### `ascdir app-store status`
+
+Shows the configured App Store version, selected build, review submission state, and release type without changing App Store Connect. Use `--json` for machine-readable output.
+
+```sh
+ascdir app-store status
+ascdir app-store status --json
+```
+
+### `ascdir testflight status`
+
+Lists builds for the configured platform and prerelease version, newest first, without changing TestFlight. Use `--json` for machine-readable output.
+
+```sh
+ascdir testflight status
+ascdir testflight status --json
+```
+
 ### `ascdir completion`
 
 Prints shell completion for Bash, Zsh, Fish, or PowerShell. For example, enable Zsh completion for the current session with:
@@ -373,7 +391,7 @@ See [Troubleshooting](docs/troubleshooting.md) for configuration discovery, auth
 
 ## Scope
 
-`ascdir` manages App Store Connect metadata and product-page assets. It does not upload app builds, submit versions for review, or manage TestFlight, certificates, subscriptions, analytics, or customer reviews.
+`ascdir` manages App Store Connect metadata and product-page assets and can inspect App Store and TestFlight release state. It does not upload app builds, distribute TestFlight builds, submit versions for review, or manage certificates, subscriptions, analytics, or customer reviews.
 
 ## Security
 
