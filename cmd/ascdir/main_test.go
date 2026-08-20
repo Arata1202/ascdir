@@ -25,11 +25,27 @@ import (
 )
 
 type mockStoreClient struct {
-	checkAuth       func(context.Context) error
-	fetchMetadata   func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
-	applyMetadata   func(context.Context, appstore.Metadata, []string, []appstore.Change) error
-	listPricePoints func(context.Context, string, string) ([]appstore.PricePoint, error)
-	resolveAppID    func(context.Context, string, string) (string, error)
+	checkAuth             func(context.Context) error
+	fetchMetadata         func(context.Context, string, string, string, string, appstore.FetchOptions) (appstore.Metadata, error)
+	applyMetadata         func(context.Context, appstore.Metadata, []string, []appstore.Change) error
+	listPricePoints       func(context.Context, string, string) ([]appstore.PricePoint, error)
+	resolveAppID          func(context.Context, string, string) (string, error)
+	fetchAppStoreStatus   func(context.Context, string, string, string, string) (appstore.AppStoreStatus, error)
+	fetchTestFlightStatus func(context.Context, string, string, string, string) (appstore.TestFlightStatus, error)
+}
+
+func (m mockStoreClient) FetchAppStoreStatus(ctx context.Context, appID, bundleID, platform, version string) (appstore.AppStoreStatus, error) {
+	if m.fetchAppStoreStatus == nil {
+		return appstore.AppStoreStatus{}, errors.New("FetchAppStoreStatus should not be called")
+	}
+	return m.fetchAppStoreStatus(ctx, appID, bundleID, platform, version)
+}
+
+func (m mockStoreClient) FetchTestFlightStatus(ctx context.Context, appID, bundleID, platform, version string) (appstore.TestFlightStatus, error) {
+	if m.fetchTestFlightStatus == nil {
+		return appstore.TestFlightStatus{}, errors.New("FetchTestFlightStatus should not be called")
+	}
+	return m.fetchTestFlightStatus(ctx, appID, bundleID, platform, version)
 }
 
 func (m mockStoreClient) ResolveAppID(ctx context.Context, appID, bundleID string) (string, error) {
@@ -84,6 +100,49 @@ func TestVersionString(t *testing.T) {
 	for _, want := range []string{"v1.0.0", "abc123", "2026-08-17"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("versionString() = %q, missing %q", got, want)
+		}
+	}
+}
+
+func TestRunAppStoreStatusJSON(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	if err := config.Save(path, config.New("app-1", "com.example.app", "IOS", "1.2.0", []string{"en-US"})); err != nil {
+		t.Fatal(err)
+	}
+	client := mockStoreClient{fetchAppStoreStatus: func(_ context.Context, appID, bundleID, platform, version string) (appstore.AppStoreStatus, error) {
+		if appID != "app-1" || bundleID != "com.example.app" || platform != "IOS" || version != "1.2.0" {
+			t.Fatalf("unexpected request: %s %s %s %s", appID, bundleID, platform, version)
+		}
+		return appstore.AppStoreStatus{AppID: appID, VersionID: "version-1", Platform: platform, Version: version, AppVersionState: "READY_FOR_REVIEW"}, nil
+	}}
+	environment, stdout, _ := testEnvironment(client)
+	if err := runWithEnvironment(context.Background(), []string{"app-store", "status", "--config", path, "--json"}, environment); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"version": "1.2.0"`, `"app_version_state": "READY_FOR_REVIEW"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("output = %q, missing %q", stdout.String(), want)
+		}
+	}
+}
+
+func TestRunTestFlightStatusHumanReadable(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "ascdir.yaml")
+	if err := config.Save(path, config.New("app-1", "com.example.app", "IOS", "1.2.0", []string{"en-US"})); err != nil {
+		t.Fatal(err)
+	}
+	client := mockStoreClient{fetchTestFlightStatus: func(_ context.Context, _, _, _, _ string) (appstore.TestFlightStatus, error) {
+		return appstore.TestFlightStatus{AppID: "app-1", Builds: []appstore.BuildStatus{{ID: "build-1", Version: "42", ProcessingState: "VALID"}}}, nil
+	}}
+	environment, stdout, _ := testEnvironment(client)
+	if err := runWithEnvironment(context.Background(), []string{"testflight", "status", "--config", path}, environment); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"TestFlight IOS 1.2.0", "- 42: VALID"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("output = %q, missing %q", stdout.String(), want)
 		}
 	}
 }
