@@ -5,3 +5,7 @@
 .DS_Store
 *.p8
 .env
+website/.next/
+website/out/
+website/node_modules/
+website/*.tsbuildinfo
