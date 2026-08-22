@@ -17,9 +17,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "lighthouse": "CHROME_PATH=$(node -e \"process.stdout.write(require('@playwright/test').chromium.executablePath())\") lhci autorun --config=./lighthouserc.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
     "@next/third-parties": "^16.3.2",
@@ -31,21 +32,17 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@axe-core/playwright": "^4.13.0",
+    "@lhci/cli": "^0.15.1",
     "@playwright/test": "^1.60.0",
-    "@testing-library/jest-dom": "6.9.1",
-    "@testing-library/react": "^16.3.2",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^6.0.2",
-    "eslint": "^9.39.4",
+    "eslint": "^9.39.5",
     "eslint-config-next": "16.3.2",
-    "jsdom": "^29.0.0",
     "prettier": "^3.8.3",
+    "serve": "^14.2.6",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.60.0",
-    "vite": "^8.0.0",
     "vitest": "^4.1.0"
   }
 }

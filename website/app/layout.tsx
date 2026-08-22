@@ -4,7 +4,7 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import { JsonLd } from "@/src/components/json-ld";
 import { SiteFooter } from "@/src/components/site-footer";
 import { SiteHeader } from "@/src/components/site-header";
-import { site } from "@/src/lib/site";
+import { isPreviewDeployment, site } from "@/src/lib/site";
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -36,9 +36,13 @@ export const metadata: Metadata = {
     images: ["/og.png"],
   },
   robots: {
-    index: true,
-    follow: true,
-    googleBot: { index: true, follow: true, "max-image-preview": "large" },
+    index: !isPreviewDeployment,
+    follow: !isPreviewDeployment,
+    googleBot: {
+      index: !isPreviewDeployment,
+      follow: !isPreviewDeployment,
+      "max-image-preview": "large",
+    },
   },
   verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
     ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }

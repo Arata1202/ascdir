@@ -154,11 +154,20 @@ export default function Home() {
             <span>ascdir — dry run</span>
           </div>
           <Image
+            className="demoMotion"
             src="/ascdir-demo.gif"
             alt="ascdir previewing App Store Connect changes in a terminal"
             width={960}
             height={540}
             priority
+            unoptimized
+          />
+          <Image
+            className="demoStill"
+            src="/ascdir-demo-static.png"
+            alt="ascdir previewing App Store Connect changes in a terminal"
+            width={960}
+            height={540}
             unoptimized
           />
         </div>

@@ -11,3 +11,5 @@ website/node_modules/
 website/*.tsbuildinfo
 website/playwright-report/
 website/test-results/
+website/lighthouse-results/
+website/.lighthouseci/

@@ -1,13 +1,13 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import { docCategories, getDocs, slugifyHeading } from "@/src/lib/docs";
+import { pageMetadata } from "@/src/lib/site";
 
-export const metadata: Metadata = {
+export const metadata = pageMetadata({
   title: "Documentation",
   description:
     "Install ascdir and manage App Store metadata, TestFlight, and releases from reviewable files.",
-  alternates: { canonical: "/docs/" },
-};
+  path: "/docs/",
+});
 
 export default async function DocsIndex() {
   const docs = await getDocs();

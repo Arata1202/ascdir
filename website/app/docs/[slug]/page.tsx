@@ -5,7 +5,7 @@ import { JsonLd } from "@/src/components/json-ld";
 import { Markdown } from "@/src/components/markdown";
 import { DocToc } from "@/src/components/doc-toc";
 import { getDoc, getDocs, getDocSlugs } from "@/src/lib/docs";
-import { absoluteUrl } from "@/src/lib/site";
+import { absoluteUrl, pageMetadata } from "@/src/lib/site";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -17,17 +17,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const doc = await getDoc(slug);
   if (!doc) return {};
-  return {
+  return pageMetadata({
     title: doc.title,
     description: doc.description,
-    alternates: { canonical: `/docs/${slug}/` },
-    openGraph: {
-      title: doc.title,
-      description: doc.description,
-      url: `/docs/${slug}/`,
-      type: "article",
-    },
-  };
+    path: `/docs/${slug}/`,
+    type: "article",
+  });
 }
 
 export default async function DocPage({ params }: Props) {

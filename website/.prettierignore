@@ -4,3 +4,7 @@ node_modules
 pnpm-lock.yaml
 playwright-report
 test-results
+lighthouse-results
+.lighthouseci
+.env.example
+public/_headers

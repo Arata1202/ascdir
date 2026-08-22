@@ -1,7 +1,9 @@
+/* Design tokens and foundations */
+
 :root {
   --ink: #1d1d1f;
   --muted: #6e6e73;
-  --subtle: #86868b;
+  --subtle: #6e6e73;
   --line: rgba(0, 0, 0, 0.1);
   --blue: #0071e3;
   --blue-hover: #0077ed;
@@ -86,6 +88,8 @@ main {
   outline-offset: 3px;
 }
 
+/* Global navigation */
+
 .siteHeader {
   position: sticky;
   z-index: 20;
@@ -142,6 +146,8 @@ main {
 .navGithub {
   color: var(--blue);
 }
+
+/* Product landing page */
 
 .hero {
   padding: 138px 0 148px;
@@ -386,6 +392,10 @@ main {
   height: auto;
 }
 
+.demoStill {
+  display: none;
+}
+
 .workflow {
   margin-top: 140px;
   padding: 120px 56px 64px;
@@ -579,6 +589,8 @@ main {
   gap: 22px;
 }
 
+/* Content pages and documentation */
+
 .contentPage {
   min-height: 70vh;
   padding: 118px 0 140px;
@@ -653,7 +665,7 @@ main {
 .docCard span {
   margin-top: auto;
   padding-top: 24px;
-  color: var(--blue);
+  color: #0066cc;
   font-size: 13px;
 }
 
@@ -819,6 +831,8 @@ main {
   color: #424245;
   background: #f5f5f7;
   font-size: 0.9em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .prose h2 code,
 .prose h3 code {
@@ -868,6 +882,8 @@ main {
 .changelogPage > h2 {
   padding-top: 10px;
 }
+
+/* Product comparison */
 
 .comparison {
   overflow-x: auto;
@@ -951,6 +967,8 @@ main {
 .emptyPage > p {
   margin: 0 auto 32px;
 }
+
+/* Responsive behavior */
 
 @media (max-width: 860px) {
   .shell {
@@ -1247,5 +1265,11 @@ main {
   *::before,
   *::after {
     transition: none !important;
+  }
+  .demoMotion {
+    display: none;
+  }
+  .demoStill {
+    display: block;
   }
 }

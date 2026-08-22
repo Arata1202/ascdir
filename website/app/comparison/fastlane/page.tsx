@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
 import Link from "next/link";
+import { pageMetadata } from "@/src/lib/site";
 
-export const metadata: Metadata = {
+export const metadata = pageMetadata({
   title: "ascdir and fastlane",
   description: "Understand where ascdir fits alongside fastlane in an App Store release workflow.",
-  alternates: { canonical: "/comparison/fastlane/" },
-};
+  path: "/comparison/fastlane/",
+});
 
 const rows = [
   {

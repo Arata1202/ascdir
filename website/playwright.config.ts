@@ -5,7 +5,7 @@ export default defineConfig({
   fullyParallel: true,
   use: { baseURL: "http://127.0.0.1:3000", trace: "on-first-retry" },
   webServer: {
-    command: "pnpm dev",
+    command: "pnpm exec serve out --listen 3000 --no-clipboard",
     url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
   },

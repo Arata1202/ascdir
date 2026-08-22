@@ -13,7 +13,7 @@ export type Doc = {
 export type DocCategory =
   "Start here" | "Content & media" | "Store configuration" | "Operations & support";
 
-const docMeta: Record<string, { category: DocCategory; description: string }> = {
+export const docMeta: Record<string, { category: DocCategory; description: string }> = {
   "getting-started": {
     category: "Start here",
     description:

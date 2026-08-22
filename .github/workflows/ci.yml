@@ -29,6 +29,7 @@ jobs:
       - run: pnpm check
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - run: pnpm lighthouse
 
   quality:
     runs-on: ubuntu-latest

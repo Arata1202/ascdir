@@ -1,13 +1,13 @@
-import type { Metadata } from "next";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Markdown } from "@/src/components/markdown";
+import { pageMetadata } from "@/src/lib/site";
 
-export const metadata: Metadata = {
+export const metadata = pageMetadata({
   title: "Changelog",
   description: "New features, improvements, and fixes released in ascdir.",
-  alternates: { canonical: "/changelog/" },
-};
+  path: "/changelog/",
+});
 
 function releaseEntries(markdown: string) {
   const unreleased = markdown.match(/^## \[Unreleased\]\s*$/m);
