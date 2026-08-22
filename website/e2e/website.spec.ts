@@ -30,6 +30,26 @@ test("documentation is statically navigable", async ({ page }) => {
     .getByRole("link", { name: "Configure App Store Connect credentials" });
   await credentialsLink.click();
   await expect(credentialsLink).toHaveAttribute("aria-current", "location");
+  const credentialsHeading = page.getByRole("heading", {
+    level: 2,
+    name: "Configure App Store Connect credentials",
+  });
+  await expect
+    .poll(() => credentialsHeading.evaluate((heading) => heading.getBoundingClientRect().top))
+    .toBeGreaterThan(52);
+});
+
+test("mobile documentation keeps long code and headings readable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/docs/getting-started/");
+  const overflowingBlock = page.locator(".codeBlockScrollable").first();
+  await expect(overflowingBlock.locator(".codeScrollCue")).toBeVisible();
+  await overflowingBlock.locator("pre").evaluate((pre) => pre.scrollTo({ left: pre.scrollWidth }));
+  await expect(overflowingBlock.locator(".codeScrollCue")).toBeHidden();
+
+  await page.goto("/docs/troubleshooting/");
+  const headingCode = page.getByRole("heading", { level: 2, name: "ascdir.yaml not found" }).locator("code");
+  await expect(headingCode).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 });
 
 test("mobile navigation keeps the primary pages discoverable", async ({ page }) => {
