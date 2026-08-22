@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="18" fill="#121923"/>
-  <text x="32" y="40" fill="#fff" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="25" font-weight="700" text-anchor="middle">a/</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="asc">
+  <style>
+    text { fill: #1D1D1F; }
+    @media (prefers-color-scheme: dark) { text { fill: #F5F5F7; } }
+  </style>
+  <text x="32" y="45" text-anchor="middle" font-family="Noto Sans Display, Noto Sans, Arial, sans-serif" font-size="31" font-weight="600" letter-spacing="-1.1">asc</text>
 </svg>

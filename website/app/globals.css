@@ -99,23 +99,14 @@ main {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  font-weight: 760;
-  letter-spacing: -0.03em;
-  font-size: 20px;
+  color: #1d1d1f;
 }
-.brandMark {
-  width: 34px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  color: white;
-  background: var(--ink);
-  font:
-    700 10px/1 "SFMono-Regular",
-    monospace;
-  letter-spacing: -0.06em;
+.brandWordmark {
+  font-family: "Noto Sans Display", "Noto Sans", Arial, sans-serif;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -1.1px;
 }
 .navLinks {
   display: flex;
@@ -512,13 +503,9 @@ main {
 }
 .footer .brand {
   color: var(--ink);
-  font-size: 17px;
 }
-.footer .brandMark {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  font-size: 11px;
+.footer .brandWordmark {
+  font-size: 21px;
 }
 .footer > div {
   display: flex;
