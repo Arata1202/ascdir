@@ -16,7 +16,12 @@ export function SiteHeader() {
           </a>
         </div>
         <details className="mobileMenu">
-          <summary aria-label="Open navigation">Menu</summary>
+          <summary aria-label="Open navigation">
+            <span className="menuIcon" aria-hidden="true">
+              <span />
+              <span />
+            </span>
+          </summary>
           <div>
             <Link href="/docs/">Docs</Link>
             <Link href="/comparison/fastlane/">Comparison</Link>

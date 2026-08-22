@@ -1,7 +1,18 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./code-block";
+import { slugifyHeading } from "@/src/lib/docs";
+
+function textFromNode(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textFromNode).join("");
+  if (node && typeof node === "object" && "props" in node) {
+    return textFromNode((node as { props: { children?: ReactNode } }).props.children);
+  }
+  return "";
+}
 
 function normalizeHref(href?: string) {
   if (!href) return "#";
@@ -16,6 +27,9 @@ export function Markdown({ children }: { children: string }) {
       remarkPlugins={[remarkGfm]}
       components={{
         pre: ({ children: code }) => <CodeBlock>{code}</CodeBlock>,
+        h2: ({ children: heading }) => (
+          <h2 id={slugifyHeading(textFromNode(heading))}>{heading}</h2>
+        ),
         a: ({ href, children: label }) => {
           const normalized = normalizeHref(href);
           return normalized.startsWith("/") ? (

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { docCategories, getDocs } from "@/src/lib/docs";
+import { docCategories, getDocs, slugifyHeading } from "@/src/lib/docs";
 
 export const metadata: Metadata = {
   title: "Documentation",
@@ -25,9 +25,10 @@ export default async function DocsIndex() {
         {docCategories.map((category) => {
           const categoryDocs = docs.filter((doc) => doc.category === category);
           if (categoryDocs.length === 0) return null;
+          const categoryId = `category-${slugifyHeading(category)}`;
           return (
-            <section className="docsGroup" aria-labelledby={`category-${category}`} key={category}>
-              <h2 id={`category-${category}`}>{category}</h2>
+            <section className="docsGroup" aria-labelledby={categoryId} key={category}>
+              <h2 id={categoryId}>{category}</h2>
               <div className="docsGrid">
                 {categoryDocs.map((doc) => (
                   <Link className="docCard" href={`/docs/${doc.slug}/`} key={doc.slug}>

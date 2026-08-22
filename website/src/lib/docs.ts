@@ -7,9 +7,10 @@ export type Doc = {
   description: string;
   body: string;
   category: DocCategory;
+  toc: { id: string; title: string }[];
 };
 
-export type DocCategory = "Start here" | "App metadata" | "Distribution" | "Release" | "Reference";
+export type DocCategory = "Start here" | "App metadata" | "Operations & support";
 
 const docMeta: Record<string, { category: DocCategory; description: string }> = {
   "getting-started": {
@@ -57,28 +58,22 @@ const docMeta: Record<string, { category: DocCategory; description: string }> = 
     description: "Add a custom end-user license agreement only when your app needs one.",
   },
   "testflight-distribution": {
-    category: "Distribution",
+    category: "Operations & support",
     description:
       "Distribute processed builds to existing TestFlight groups and request review when needed.",
   },
   release: {
-    category: "Release",
+    category: "Operations & support",
     description: "Submit a processed build for App Review and control its release after approval.",
   },
   troubleshooting: {
-    category: "Reference",
+    category: "Operations & support",
     description:
       "Resolve configuration paths, credentials, validation failures, and common command errors.",
   },
 };
 
-export const docCategories: DocCategory[] = [
-  "Start here",
-  "App metadata",
-  "Distribution",
-  "Release",
-  "Reference",
-];
+export const docCategories: DocCategory[] = ["Start here", "App metadata", "Operations & support"];
 
 const docsDirectory = path.resolve(process.cwd(), "../docs");
 
@@ -91,6 +86,21 @@ function titleFromSlug(slug: string) {
 
 function stripTitle(markdown: string) {
   return markdown.replace(/^#\s+.+\r?\n+/, "").trim();
+}
+
+export function slugifyHeading(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[`*_]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function tocFromMarkdown(markdown: string) {
+  return [...stripTitle(markdown).matchAll(/^##\s+(.+)$/gm)].map((match) => ({
+    id: slugifyHeading(match[1]),
+    title: match[1].replace(/[`*_]/g, ""),
+  }));
 }
 
 function descriptionFromMarkdown(markdown: string) {
@@ -124,7 +134,8 @@ export async function getDoc(slug: string): Promise<Doc | null> {
       title: heading ?? titleFromSlug(slug),
       description: docMeta[slug]?.description ?? descriptionFromMarkdown(markdown),
       body: stripTitle(markdown),
-      category: docMeta[slug]?.category ?? "Reference",
+      category: docMeta[slug]?.category ?? "Operations & support",
+      toc: tocFromMarkdown(markdown),
     };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;

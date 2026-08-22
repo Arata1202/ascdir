@@ -642,6 +642,21 @@ main {
 .docAside a:hover {
   color: var(--blue);
 }
+.docAside > nav {
+  position: sticky;
+  top: 92px;
+  margin-top: 42px;
+  display: grid;
+  gap: 11px;
+}
+.docAside > nav p {
+  margin: 0 0 3px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.docAside > nav a {
+  line-height: 1.35;
+}
 .prose {
   min-width: 0;
   color: #424245;
@@ -694,8 +709,8 @@ main {
   position: absolute;
   top: 12px;
   right: 12px;
-  min-width: 52px;
-  min-height: 32px;
+  min-width: 58px;
+  min-height: 44px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 980px;
   color: #d2d2d7;
@@ -887,6 +902,9 @@ main {
   .docAside {
     padding-top: 0;
   }
+  .docAside > nav {
+    display: none;
+  }
   .footer {
     padding: 50px 0;
     flex-wrap: wrap;
@@ -914,8 +932,6 @@ main {
     min-height: 44px;
     display: grid;
     place-items: center;
-    color: #424245;
-    font-size: 12px;
     cursor: pointer;
     list-style: none;
   }
@@ -924,6 +940,27 @@ main {
   }
   .mobileMenu[open] summary {
     color: var(--blue);
+  }
+  .menuIcon {
+    width: 18px;
+    height: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .menuIcon span {
+    width: 18px;
+    height: 1px;
+    display: block;
+    background: currentColor;
+    transition: transform 0.2s ease;
+    transform-origin: center;
+  }
+  .mobileMenu[open] .menuIcon span:first-child {
+    transform: translateY(5.5px) rotate(45deg);
+  }
+  .mobileMenu[open] .menuIcon span:last-child {
+    transform: translateY(-5.5px) rotate(-45deg);
   }
   .mobileMenu > div {
     position: absolute;
@@ -1037,7 +1074,7 @@ main {
     text-align: left;
   }
   .prose .codeBlock pre {
-    padding: 54px 18px 18px;
+    padding: 64px 18px 18px;
   }
   .footer {
     display: grid;

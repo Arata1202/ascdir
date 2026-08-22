@@ -23,7 +23,7 @@ test("documentation is statically navigable", async ({ page }) => {
 test("mobile navigation keeps the primary pages discoverable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByText("Menu", { exact: true }).click();
+  await page.getByLabel("Open navigation").click();
   await expect(page.getByRole("link", { name: "Docs" }).last()).toBeVisible();
   await expect(page.getByRole("link", { name: "Comparison" }).last()).toBeVisible();
   await expect(page.getByRole("link", { name: "Changelog" }).last()).toBeVisible();
