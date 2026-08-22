@@ -6,7 +6,6 @@ export function SiteFooter() {
   return (
     <footer className="footer shell">
       <Brand />
-      <p>Reviewable App Store workflows, released under the MIT License.</p>
       <div>
         <Link href="/docs/">Docs</Link>
         <a href={`${site.github}/releases`}>Releases</a>
