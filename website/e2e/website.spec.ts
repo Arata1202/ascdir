@@ -7,6 +7,10 @@ test("home page provides a clear route into documentation", async ({ page }) => 
     "href",
     "/docs/getting-started/",
   );
+  const installCopy = page.getByRole("button", { name: "Copy install command" });
+  await expect(installCopy).toHaveCSS("height", "44px");
+  await installCopy.click();
+  await expect(page.getByRole("status")).toHaveText("Code copied to clipboard");
 });
 
 test("documentation is statically navigable", async ({ page }) => {

@@ -274,6 +274,29 @@ main {
   text-transform: uppercase;
 }
 
+.copyButton {
+  font: inherit;
+  cursor: pointer;
+}
+
+.installCopy {
+  width: 44px;
+  height: 44px;
+  margin: -10px -10px -10px 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--subtle);
+  background: transparent;
+}
+
+.installCopy:hover {
+  color: var(--ink);
+  background: var(--panel);
+}
+
 .sectionHeading {
   margin-bottom: 52px;
   display: flex;
@@ -723,7 +746,7 @@ main {
   line-height: 1.65;
 }
 
-.codeBlock button {
+.codeBlock .copyButton {
   position: absolute;
   top: 12px;
   right: 12px;
@@ -738,7 +761,7 @@ main {
   cursor: pointer;
 }
 
-.codeBlock button:hover {
+.codeBlock .copyButton:hover {
   color: white;
   background: rgba(255, 255, 255, 0.14);
 }

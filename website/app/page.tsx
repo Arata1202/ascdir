@@ -1,9 +1,11 @@
 import { JsonLd } from "@/src/components/json-ld";
 import { absoluteUrl, site } from "@/src/lib/site";
 import Image from "next/image";
+import { CopyButton } from "@/src/components/copy-button";
 
 const githubUrl = "https://github.com/Arata1202/ascdir";
 const docsUrl = "/docs/getting-started/";
+const installCommand = "brew install Arata1202/tap/ascdir";
 
 const workflow = [
   {
@@ -120,8 +122,14 @@ export default function Home() {
         </div>
         <div className="install" aria-label="Homebrew install command">
           <span className="prompt">$</span>
-          <code>brew install Arata1202/tap/ascdir</code>
+          <code>{installCommand}</code>
           <span className="installHint">macOS · Linux</span>
+          <CopyButton
+            value={installCommand}
+            label="Copy install command"
+            variant="icon"
+            className="installCopy"
+          />
         </div>
       </section>
 
