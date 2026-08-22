@@ -92,9 +92,6 @@ export default function Home() {
   return (
     <main id="main-content">
       <JsonLd data={softwareJsonLd} />
-      <div className="ambient ambientOne" />
-      <div className="ambient ambientTwo" />
-
       <section className="hero shell" id="top">
         <div className="eyebrow">
           <span /> Open source App Store workflows
