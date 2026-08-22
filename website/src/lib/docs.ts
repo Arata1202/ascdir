@@ -10,7 +10,8 @@ export type Doc = {
   toc: { id: string; title: string }[];
 };
 
-export type DocCategory = "Start here" | "App metadata" | "Operations & support";
+export type DocCategory =
+  "Start here" | "Content & media" | "Store configuration" | "Operations & support";
 
 const docMeta: Record<string, { category: DocCategory; description: string }> = {
   "getting-started": {
@@ -24,37 +25,37 @@ const docMeta: Record<string, { category: DocCategory; description: string }> = 
       "Understand what ascdir manages and how it complements your existing build pipeline.",
   },
   metadata: {
-    category: "App metadata",
+    category: "Content & media",
     description: "Manage localized text and long-form product-page content in reviewable files.",
   },
   screenshots: {
-    category: "App metadata",
+    category: "Content & media",
     description: "Keep App Store screenshots in a predictable, project-relative directory.",
   },
   "app-previews": {
-    category: "App metadata",
+    category: "Content & media",
     description: "Manage App Preview videos from a project-relative directory.",
   },
   accessibility: {
-    category: "App metadata",
+    category: "Store configuration",
     description:
       "Configure Accessibility Nutrition Labels for every supported Apple device family.",
   },
   "age-rating": {
-    category: "App metadata",
+    category: "Store configuration",
     description: "Map age-rating declarations directly to App Store Connect.",
   },
   pricing: {
-    category: "App metadata",
+    category: "Store configuration",
     description: "Set exact App Store price points without locale-dependent currency formatting.",
   },
   availability: {
-    category: "App metadata",
+    category: "Store configuration",
     description:
       "Control storefront availability and preorder settings from explicit configuration.",
   },
   "license-agreement": {
-    category: "App metadata",
+    category: "Store configuration",
     description: "Add a custom end-user license agreement only when your app needs one.",
   },
   "testflight-distribution": {
@@ -73,7 +74,12 @@ const docMeta: Record<string, { category: DocCategory; description: string }> = 
   },
 };
 
-export const docCategories: DocCategory[] = ["Start here", "App metadata", "Operations & support"];
+export const docCategories: DocCategory[] = [
+  "Start here",
+  "Content & media",
+  "Store configuration",
+  "Operations & support",
+];
 
 const docsDirectory = path.resolve(process.cwd(), "../docs");
 
