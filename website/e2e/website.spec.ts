@@ -40,3 +40,14 @@ test("mobile navigation keeps the primary pages discoverable", async ({ page }) 
   await expect(page.getByRole("link", { name: "Comparison" }).last()).toBeVisible();
   await expect(page.getByRole("link", { name: "Changelog" }).last()).toBeVisible();
 });
+
+test("comparison remains complete without horizontal scrolling on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/comparison/fastlane/");
+
+  const comparison = page.getByLabel("ascdir and fastlane comparison").filter({ visible: true });
+  await expect(comparison.getByText("Primary focus")).toBeVisible();
+  await expect(comparison.getByText("End-to-end mobile release automation")).toBeVisible();
+  await expect(comparison.getByText("HTML metadata preview in deliver; behavior varies by action")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+});

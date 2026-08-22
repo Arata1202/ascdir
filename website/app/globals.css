@@ -858,6 +858,22 @@ main {
   border-bottom: 0;
 }
 
+.comparisonCards {
+  display: none;
+}
+
+.comparisonSources {
+  margin: 18px 4px 0;
+  color: var(--subtle);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.comparisonSources a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
 .callout {
   margin-top: 48px;
   padding: 48px;
@@ -1094,6 +1110,49 @@ main {
   }
   .contentPage {
     padding-top: 80px;
+  }
+  .comparison {
+    display: none;
+  }
+  .comparisonCards {
+    display: grid;
+    gap: 12px;
+  }
+  .comparisonCards > section {
+    overflow: hidden;
+    border-radius: 20px;
+    background: var(--panel);
+  }
+  .comparisonCards h2 {
+    margin: 0;
+    padding: 20px 22px 14px;
+    color: var(--ink);
+    font-size: 17px;
+    letter-spacing: -0.02em;
+  }
+  .comparisonCards dl {
+    margin: 0;
+  }
+  .comparisonCards dl > div {
+    padding: 16px 22px 20px;
+    border-top: 1px solid var(--line);
+  }
+  .comparisonCards dt {
+    margin-bottom: 6px;
+    color: var(--subtle);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .comparisonCards dd {
+    margin: 0;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .comparisonSources {
+    margin-top: 16px;
   }
   .docsGrid {
     grid-template-columns: 1fr;
