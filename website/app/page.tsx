@@ -1,5 +1,9 @@
+import { JsonLd } from "@/src/components/json-ld";
+import { absoluteUrl, site } from "@/src/lib/site";
+import Image from "next/image";
+
 const githubUrl = "https://github.com/Arata1202/ascdir";
-const docsUrl = `${githubUrl}#quick-start`;
+const docsUrl = "/docs/getting-started/";
 
 const workflow = [
   {
@@ -43,7 +47,14 @@ const features = [
 function ArrowIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18">
-      <path d="M4 10h11M11 6l4 4-4 4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
+      <path
+        d="M4 10h11M11 6l4 4-4 4"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
     </svg>
   );
 }
@@ -51,42 +62,50 @@ function ArrowIcon() {
 function CheckIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" width="18" height="18">
-      <path d="m4.5 10 3.2 3.2 7.8-7.8" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+      <path
+        d="m4.5 10 3.2 3.2 7.8-7.8"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }
 
 export default function Home() {
+  const softwareJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "ascdir",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS, Linux, Windows",
+    description: site.description,
+    url: absoluteUrl("/"),
+    downloadUrl: `${site.github}/releases`,
+    softwareHelp: absoluteUrl("/docs/"),
+    license: `${site.github}/blob/main/LICENSE`,
+    isAccessibleForFree: true,
+  };
+
   return (
-    <main>
+    <main id="main-content">
+      <JsonLd data={softwareJsonLd} />
       <div className="ambient ambientOne" />
       <div className="ambient ambientTwo" />
 
-      <nav className="nav shell" aria-label="Primary navigation">
-        <a className="brand" href="#top" aria-label="ascdir home">
-          <span className="brandMark">a/</span>
-          <span>ascdir</span>
-        </a>
-        <div className="navLinks">
-          <a href="#workflow">Workflow</a>
-          <a href="#features">Features</a>
-          <a href={docsUrl}>Docs</a>
-          <a className="navGithub" href={githubUrl}>
-            GitHub
-            <ArrowIcon />
-          </a>
-        </div>
-      </nav>
-
       <section className="hero shell" id="top">
-        <div className="eyebrow"><span /> Open source App Store workflows</div>
+        <div className="eyebrow">
+          <span /> Open source App Store workflows
+        </div>
         <h1>
           Your App Store release,
           <span>reviewed before it runs.</span>
         </h1>
         <p className="heroCopy">
-          Manage metadata, TestFlight distribution, and App Store releases as files.
-          Preview every planned operation with a safe dry run, then ship with explicit intent.
+          Manage metadata, TestFlight distribution, and App Store releases as files. Preview every
+          planned operation with a safe dry run, then ship with explicit intent.
         </p>
         <div className="heroActions">
           <a className="button buttonPrimary" href={docsUrl}>
@@ -110,15 +129,29 @@ export default function Home() {
             <p className="kicker">See the change before Apple does</p>
             <h2 id="demo-title">A release plan you can actually review.</h2>
           </div>
-          <p>Human-readable plans for local changes, TestFlight distribution, submissions, and releases.</p>
+          <p>
+            Human-readable plans for local changes, TestFlight distribution, submissions, and
+            releases.
+          </p>
         </div>
         <div className="terminalFrame">
           <div className="terminalBar">
-            <div className="terminalDots"><span /><span /><span /></div>
+            <div className="terminalDots">
+              <span />
+              <span />
+              <span />
+            </div>
             <span>ascdir — dry run</span>
             <span className="terminalSecure">read-only</span>
           </div>
-          <img src="/ascdir-demo.gif" alt="ascdir previewing App Store Connect changes in a terminal" />
+          <Image
+            src="/ascdir-demo.gif"
+            alt="ascdir previewing App Store Connect changes in a terminal"
+            width={960}
+            height={540}
+            priority
+            unoptimized
+          />
         </div>
       </section>
 
@@ -128,7 +161,10 @@ export default function Home() {
             <p className="kicker">A focused workflow</p>
             <h2 id="workflow-title">From repository to release.</h2>
           </div>
-          <p>ascdir starts after your app exists in App Store Connect and complements the build pipeline you already use.</p>
+          <p>
+            ascdir starts after your app exists in App Store Connect and complements the build
+            pipeline you already use.
+          </p>
         </div>
         <div className="workflowGrid">
           {workflow.map((item) => (
@@ -165,15 +201,37 @@ export default function Home() {
           <p className="kicker">Safe by design</p>
           <h2 id="safety-title">Automation that knows when to stop.</h2>
           <p>
-            Apple does not provide transactions across every App Store Connect resource.
-            ascdir stages complete plans, revalidates remote state, and refuses ambiguous operations.
+            Apple does not provide transactions across every App Store Connect resource. ascdir
+            stages complete plans, revalidates remote state, and refuses ambiguous operations.
           </p>
         </div>
         <ul className="safetyList">
-          <li><CheckIcon /><span><strong>Dry run first</strong>Read-only plans for every mutating release command.</span></li>
-          <li><CheckIcon /><span><strong>Explicit confirmation</strong>Bind execution to the configured app version.</span></li>
-          <li><CheckIcon /><span><strong>Idempotent retries</strong>Converge from current remote state without duplicate submissions.</span></li>
-          <li><CheckIcon /><span><strong>Short-lived auth</strong>Generate ES256 JWTs locally without uploading private keys.</span></li>
+          <li>
+            <CheckIcon />
+            <span>
+              <strong>Dry run first</strong>Read-only plans for every mutating release command.
+            </span>
+          </li>
+          <li>
+            <CheckIcon />
+            <span>
+              <strong>Explicit confirmation</strong>Bind execution to the configured app version.
+            </span>
+          </li>
+          <li>
+            <CheckIcon />
+            <span>
+              <strong>Idempotent retries</strong>Converge from current remote state without
+              duplicate submissions.
+            </span>
+          </li>
+          <li>
+            <CheckIcon />
+            <span>
+              <strong>Short-lived auth</strong>Generate ES256 JWTs locally without uploading private
+              keys.
+            </span>
+          </li>
         </ul>
       </section>
 
@@ -183,16 +241,12 @@ export default function Home() {
           <h2>Make the next release reviewable.</h2>
         </div>
         <div className="ctaActions">
-          <a className="button buttonLight" href={docsUrl}>Read the quick start <ArrowIcon /></a>
+          <a className="button buttonLight" href={docsUrl}>
+            Read the quick start <ArrowIcon />
+          </a>
           <code>brew install Arata1202/tap/ascdir</code>
         </div>
       </section>
-
-      <footer className="footer shell">
-        <a className="brand" href="#top"><span className="brandMark">a/</span><span>ascdir</span></a>
-        <p>Reviewable App Store workflows, released under the MIT License.</p>
-        <div><a href={githubUrl}>GitHub</a><a href={`${githubUrl}/releases`}>Releases</a><a href={`${githubUrl}/blob/main/LICENSE`}>License</a></div>
-      </footer>
     </main>
   );
 }

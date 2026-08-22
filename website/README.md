@@ -1,19 +1,34 @@
 # ascdir website
 
-The ascdir landing page is a statically exported Next.js application.
+The official ascdir site is a statically exported Next.js application. It has no server runtime, API, database, CMS, or duplicated documentation source.
+
+## Local development
 
 ```sh
-npm ci
-npm run dev
+corepack enable
+pnpm install
+pnpm dev
 ```
 
-Validate the production output before opening a pull request:
+The pages under `/docs/` are generated from the repository-level [`docs/`](../docs/) directory. Keep CLI behavior and its documentation in the same pull request.
+
+## Quality checks
 
 ```sh
-npm run typecheck
-npm run build
+pnpm check
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```
 
-The static site is written to `out/`. It intentionally has no server runtime,
-API routes, database, or duplicated reference documentation; detailed usage
-stays in the repository README and `docs/` directory.
+## Cloudflare Pages
+
+- Root directory: `website`
+- Build command: `pnpm build`
+- Output directory: `out`
+- Environment variable: `NEXT_PUBLIC_SITE_URL` set to the canonical production origin
+- Node.js: 24
+
+Optional production integrations are configured with `NEXT_PUBLIC_GOOGLE_ANALYTICS_ID`,
+`NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`, and `NEXT_PUBLIC_SENTRY_DSN`. Sentry source-map uploads additionally use `SENTRY_ORG`, `SENTRY_PROJECT`, and `SENTRY_AUTH_TOKEN` in the build environment.
+
+Pull requests receive Cloudflare preview deployments. Only the production deployment should use the canonical custom-domain value.

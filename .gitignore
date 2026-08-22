@@ -9,3 +9,5 @@ website/.next/
 website/out/
 website/node_modules/
 website/*.tsbuildinfo
+website/playwright-report/
+website/test-results/

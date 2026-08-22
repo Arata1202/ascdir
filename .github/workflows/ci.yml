@@ -15,7 +15,7 @@ concurrency:
 jobs:
   website:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: website
@@ -24,11 +24,11 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
 
   quality:
     runs-on: ubuntu-latest
