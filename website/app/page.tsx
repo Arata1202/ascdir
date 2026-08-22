@@ -17,7 +17,7 @@ const workflow = [
   {
     step: "02",
     title: "Review the plan",
-    body: "Validate locally, then inspect the exact App Store Connect changes before any mutation is sent.",
+    body: "Validate locally, then inspect the exact App Store Connect changes before anything is applied.",
     command: "ascdir push --dry-run",
   },
   {
@@ -108,8 +108,8 @@ export default function Home() {
           </span>
         </h1>
         <p className="heroCopy">
-          Manage metadata, TestFlight distribution, and App Store releases as files. Preview every
-          planned operation with a safe dry run, then ship with explicit intent.
+          Manage metadata and product-page assets as files, then review TestFlight distribution and
+          App Store release operations with safe dry runs.
         </p>
         <div className="heroActions">
           <a className="button buttonPrimary" href={docsUrl}>
@@ -191,7 +191,7 @@ export default function Home() {
         <div className="sectionHeading">
           <div>
             <p className="kicker">Built for recurring release work</p>
-            <h2 id="features-title">Everything in the path stays explicit.</h2>
+            <h2 id="features-title">Every release step stays explicit.</h2>
           </div>
         </div>
         <div className="featureList">
@@ -218,7 +218,7 @@ export default function Home() {
           <li>
             <CheckIcon />
             <span>
-              <strong>Dry run first</strong>Read-only plans for every mutating release command.
+              <strong>Dry run first</strong>Read-only plans before any remote change is applied.
             </span>
           </li>
           <li>
