@@ -846,6 +846,29 @@ main {
   text-align: left;
 }
 
+.changelogPage {
+  width: min(100%, 760px);
+  margin-inline: auto;
+}
+
+.changelogLead {
+  max-width: 680px;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1.55;
+}
+
+.changelogFormat {
+  margin-top: -4px !important;
+  color: var(--subtle);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.changelogPage > h2 {
+  padding-top: 10px;
+}
+
 .comparison {
   overflow-x: auto;
   border-radius: 24px;

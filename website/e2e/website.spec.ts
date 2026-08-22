@@ -71,3 +71,10 @@ test("comparison remains complete without horizontal scrolling on mobile", async
   await expect(comparison.getByText("HTML metadata preview in deliver; behavior varies by action")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
+
+test("changelog has a clear page hierarchy without empty release sections", async ({ page }) => {
+  await page.goto("/changelog/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Changelog");
+  await expect(page.getByRole("heading", { name: "Unreleased" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 2 }).first()).toContainText("1.2.1");
+});
