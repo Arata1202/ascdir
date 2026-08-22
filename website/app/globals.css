@@ -70,6 +70,17 @@ main {
   transform: translateY(0);
 }
 
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 :focus-visible {
   outline: 3px solid rgba(0, 113, 227, 0.45);
   outline-offset: 3px;
@@ -655,7 +666,14 @@ main {
   font-weight: 600;
 }
 .docAside > nav a {
+  padding-left: 9px;
+  border-left: 1px solid transparent;
   line-height: 1.35;
+}
+.docAside > nav a[aria-current="location"] {
+  border-left-color: var(--blue);
+  color: var(--ink);
+  font-weight: 500;
 }
 .prose {
   min-width: 0;

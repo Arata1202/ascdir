@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JsonLd } from "@/src/components/json-ld";
 import { Markdown } from "@/src/components/markdown";
+import { DocToc } from "@/src/components/doc-toc";
 import { getDoc, getDocs, getDocSlugs } from "@/src/lib/docs";
 import { absoluteUrl } from "@/src/lib/site";
 
@@ -51,16 +52,7 @@ export default async function DocPage({ params }: Props) {
     <main className="docLayout shell" id="main-content">
       <aside className="docAside" aria-label="Documentation navigation">
         <Link href="/docs/">← All documentation</Link>
-        {doc.toc.length > 0 ? (
-          <nav aria-label="On this page">
-            <p>On this page</p>
-            {doc.toc.map((item) => (
-              <a href={`#${item.id}`} key={item.id}>
-                {item.title}
-              </a>
-            ))}
-          </nav>
-        ) : null}
+        {doc.toc.length > 0 ? <DocToc items={doc.toc} /> : null}
       </aside>
       <article className="prose">
         <JsonLd data={breadcrumb} />

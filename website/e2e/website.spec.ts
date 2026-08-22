@@ -18,6 +18,14 @@ test("documentation is statically navigable", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Getting started");
   await expect(page.getByRole("button", { name: "Copy code to clipboard" }).first()).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Documentation pages" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "On this page" })).toBeVisible();
+  await page.getByRole("button", { name: "Copy code to clipboard" }).first().click();
+  await expect(page.getByRole("status").first()).toHaveText("Code copied to clipboard");
+  const credentialsLink = page
+    .getByRole("navigation", { name: "On this page" })
+    .getByRole("link", { name: "Configure App Store Connect credentials" });
+  await credentialsLink.click();
+  await expect(credentialsLink).toHaveAttribute("aria-current", "location");
 });
 
 test("mobile navigation keeps the primary pages discoverable", async ({ page }) => {
