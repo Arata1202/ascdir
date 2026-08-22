@@ -10,7 +10,7 @@ const installCommand = "brew install Arata1202/tap/ascdir";
 const workflow = [
   {
     step: "01",
-    title: "Pull into files",
+    title: "Bring it into your repository",
     body: "Initialize from an existing app and keep localized metadata and product-page assets in your repository.",
     command: "ascdir init --bundle-id com.example.app --platform IOS --version 1.2.0",
   },
@@ -31,7 +31,7 @@ const workflow = [
 const features = [
   {
     label: "Metadata",
-    title: "One source of truth",
+    title: "A reviewable source of truth",
     body: "Keep product-page text, screenshots, previews, pricing, and availability in reviewable YAML, Markdown, and asset directories.",
   },
   {
@@ -100,11 +100,11 @@ export default function Home() {
         </div>
         <h1>
           <span className="heroDesktop">Your App Store release,</span>
-          <span className="heroDesktop heroMuted">reviewed before it runs.</span>
+          <span className="heroDesktop heroMuted">reviewed before it ships.</span>
           <span className="heroMobile">
             Review your release.
             <br />
-            Before it runs.
+            Before it ships.
           </span>
         </h1>
         <p className="heroCopy">

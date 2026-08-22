@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("home page provides a clear route into documentation", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("reviewed before it runs");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("reviewed before it ships");
   await expect(page.getByRole("link", { name: /get started/i })).toHaveAttribute(
     "href",
     "/docs/getting-started/",
