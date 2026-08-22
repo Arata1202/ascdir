@@ -253,7 +253,6 @@ export default function Home() {
           <a className="button buttonLight" href={docsUrl}>
             Read the quick start <ArrowIcon />
           </a>
-          <code>brew install Arata1202/tap/ascdir</code>
         </div>
       </section>
     </main>

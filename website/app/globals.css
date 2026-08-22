@@ -558,11 +558,6 @@ main {
 .buttonLight:hover {
   background: var(--blue-hover);
 }
-.cta code {
-  color: var(--subtle);
-  font-size: 10px;
-}
-
 .footer {
   min-height: 170px;
   display: flex;
