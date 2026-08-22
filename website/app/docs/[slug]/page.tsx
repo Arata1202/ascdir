@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JsonLd } from "@/src/components/json-ld";
 import { Markdown } from "@/src/components/markdown";
-import { getDoc, getDocSlugs } from "@/src/lib/docs";
+import { getDoc, getDocs, getDocSlugs } from "@/src/lib/docs";
 import { absoluteUrl } from "@/src/lib/site";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -33,6 +33,10 @@ export default async function DocPage({ params }: Props) {
   const { slug } = await params;
   const doc = await getDoc(slug);
   if (!doc) notFound();
+  const docs = await getDocs();
+  const currentIndex = docs.findIndex((item) => item.slug === slug);
+  const previousDoc = currentIndex > 0 ? docs[currentIndex - 1] : null;
+  const nextDoc = currentIndex < docs.length - 1 ? docs[currentIndex + 1] : null;
   const url = absoluteUrl(`/docs/${slug}/`);
   const breadcrumb = {
     "@context": "https://schema.org",
@@ -53,6 +57,22 @@ export default async function DocPage({ params }: Props) {
         <p className="kicker">Documentation</p>
         <h1>{doc.title}</h1>
         <Markdown>{doc.body}</Markdown>
+        <nav className="docPager" aria-label="Documentation pages">
+          {previousDoc ? (
+            <Link href={`/docs/${previousDoc.slug}/`}>
+              <span>Previous</span>
+              {previousDoc.title}
+            </Link>
+          ) : (
+            <span />
+          )}
+          {nextDoc ? (
+            <Link href={`/docs/${nextDoc.slug}/`}>
+              <span>Next</span>
+              {nextDoc.title}
+            </Link>
+          ) : null}
+        </nav>
       </article>
     </main>
   );

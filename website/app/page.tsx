@@ -97,8 +97,13 @@ export default function Home() {
           <span /> Open source App Store workflows
         </div>
         <h1>
-          Your App Store release,
-          <span>reviewed before it runs.</span>
+          <span className="heroDesktop">Your App Store release,</span>
+          <span className="heroDesktop heroMuted">reviewed before it runs.</span>
+          <span className="heroMobile">
+            Review your release.
+            <br />
+            Before it runs.
+          </span>
         </h1>
         <p className="heroCopy">
           Manage metadata, TestFlight distribution, and App Store releases as files. Preview every

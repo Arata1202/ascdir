@@ -16,4 +16,15 @@ test("documentation is statically navigable", async ({ page }) => {
     .first()
     .click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Getting started");
+  await expect(page.getByRole("button", { name: "Copy code to clipboard" }).first()).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Documentation pages" })).toBeVisible();
+});
+
+test("mobile navigation keeps the primary pages discoverable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByText("Menu", { exact: true }).click();
+  await expect(page.getByRole("link", { name: "Docs" }).last()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Comparison" }).last()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Changelog" }).last()).toBeVisible();
 });

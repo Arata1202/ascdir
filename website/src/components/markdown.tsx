@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CodeBlock } from "./code-block";
 
 function normalizeHref(href?: string) {
   if (!href) return "#";
@@ -14,6 +15,7 @@ export function Markdown({ children }: { children: string }) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
+        pre: ({ children: code }) => <CodeBlock>{code}</CodeBlock>,
         a: ({ href, children: label }) => {
           const normalized = normalizeHref(href);
           return normalized.startsWith("/") ? (

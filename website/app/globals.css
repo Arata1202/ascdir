@@ -86,10 +86,15 @@ main {
 }
 
 .nav {
+  position: relative;
   height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.mobileMenu {
+  display: none;
 }
 
 .brand {
@@ -164,7 +169,14 @@ main {
 
 .hero h1 span {
   display: block;
+}
+
+.heroMuted {
   color: var(--muted);
+}
+
+.heroMobile {
+  display: none !important;
 }
 
 .heroCopy {
@@ -562,6 +574,20 @@ main {
   line-height: 1.55;
 }
 
+.docsGroups {
+  display: grid;
+  gap: 64px;
+}
+
+.docsGroup > h2 {
+  margin: 0 0 22px;
+  color: var(--subtle);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .docsGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -581,7 +607,7 @@ main {
 .docCard:hover {
   transform: scale(1.012);
 }
-.docCard h2 {
+.docCard h3 {
   margin: 0 0 14px;
   font-size: 23px;
   letter-spacing: -0.035em;
@@ -648,15 +674,75 @@ main {
   text-decoration-color: rgba(0, 113, 227, 0.25);
   text-underline-offset: 3px;
 }
-.prose pre {
-  overflow-x: auto;
+.codeBlock {
+  position: relative;
   margin: 26px 0;
-  padding: 22px;
+}
+
+.prose .codeBlock pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 22px 72px 22px 22px;
   border-radius: 16px;
   color: #f5f5f7;
   background: #1d1d1f;
   font-size: 13px;
   line-height: 1.65;
+}
+
+.codeBlock button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  min-width: 52px;
+  min-height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 980px;
+  color: #d2d2d7;
+  background: rgba(255, 255, 255, 0.08);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.codeBlock button:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.docPager {
+  margin-top: 72px;
+  padding-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.docPager a {
+  min-height: 96px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 18px;
+  color: var(--ink);
+  background: var(--panel);
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.docPager a:last-child {
+  text-align: right;
+}
+
+.docPager a span {
+  margin-bottom: 5px;
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
 }
 .prose :not(pre) > code {
   padding: 2px 5px;
@@ -817,11 +903,64 @@ main {
   .brandWordmark {
     font-size: 23px;
   }
+  .navLinks {
+    display: none;
+  }
+  .mobileMenu {
+    display: block;
+  }
+  .mobileMenu summary {
+    min-width: 44px;
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+    color: #424245;
+    font-size: 12px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .mobileMenu summary::-webkit-details-marker {
+    display: none;
+  }
+  .mobileMenu[open] summary {
+    color: var(--blue);
+  }
+  .mobileMenu > div {
+    position: absolute;
+    top: calc(100% + 1px);
+    right: -14px;
+    left: -14px;
+    padding: 18px 14px 22px;
+    display: grid;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(20px);
+  }
+  .mobileMenu a {
+    min-height: 44px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+  .mobileMenu a:hover {
+    background: var(--panel);
+  }
   .hero {
     padding: 82px 0 94px;
   }
   .hero h1 {
-    font-size: 49px;
+    font-size: 46px;
+    line-height: 1.01;
+    letter-spacing: -0.055em;
+  }
+  .heroDesktop {
+    display: none !important;
+  }
+  .heroMobile {
+    display: block !important;
   }
   .heroCopy {
     font-size: 18px;
@@ -883,7 +1022,22 @@ main {
     grid-template-columns: 1fr;
   }
   .docCard {
-    min-height: 220px;
+    min-height: 210px;
+  }
+  .docsGroups {
+    gap: 52px;
+  }
+  .docPager {
+    grid-template-columns: 1fr;
+  }
+  .docPager > span {
+    display: none;
+  }
+  .docPager a:last-child {
+    text-align: left;
+  }
+  .prose .codeBlock pre {
+    padding: 54px 18px 18px;
   }
   .footer {
     display: grid;
