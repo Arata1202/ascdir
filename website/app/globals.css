@@ -442,16 +442,18 @@ main {
 }
 
 .workflowCard code {
-  display: block;
-  overflow: hidden;
+  display: flex;
+  min-height: 54px;
+  align-items: center;
   margin-top: auto;
   padding: 13px 14px;
   border-radius: 12px;
   color: #f5f5f7;
   background: #1d1d1f;
   font-size: 10px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .features {
