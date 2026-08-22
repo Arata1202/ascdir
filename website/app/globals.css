@@ -381,10 +381,6 @@ main {
 .terminalDots span:last-child {
   background: #28c840;
 }
-.terminalSecure {
-  justify-self: end;
-  color: #8ed1a8;
-}
 .terminalFrame img {
   width: 100%;
   height: auto;

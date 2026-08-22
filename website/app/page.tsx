@@ -152,7 +152,6 @@ export default function Home() {
               <span />
             </div>
             <span>ascdir — dry run</span>
-            <span className="terminalSecure">read-only</span>
           </div>
           <Image
             src="/ascdir-demo.gif"
