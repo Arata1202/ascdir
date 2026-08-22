@@ -408,6 +408,8 @@ main {
 }
 
 .workflowCard {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: 30px;
   border-radius: 24px;
@@ -435,10 +437,14 @@ main {
   line-height: 1.55;
 }
 
+.workflowCard p {
+  padding-bottom: 32px;
+}
+
 .workflowCard code {
   display: block;
   overflow: hidden;
-  margin-top: 32px;
+  margin-top: auto;
   padding: 13px 14px;
   border-radius: 12px;
   color: #f5f5f7;
